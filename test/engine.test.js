@@ -42,6 +42,13 @@ test('every map is valid: connected, sane routes, slots match lengths, tickets r
   }
 });
 
+test('every car on a board is the same length, like the plastic pieces', () => {
+  for (const id of M.list) {
+    const lens = M.get(id).routes.flatMap((r) => r.slots.map((s) => s[3]));
+    assert.ok(Math.max(...lens) - Math.min(...lens) <= 0.2, `${id}: cars from ${Math.min(...lens)} to ${Math.max(...lens)}`);
+  }
+});
+
 test('official boards: city, route and ticket counts as published', () => {
   const lanes = (id) => M.get(id).routes.length;
   const conn = (id) => M.get(id).routes.filter((r, i) => r.pair < 0 || r.pair > i).length; // a double route counts once

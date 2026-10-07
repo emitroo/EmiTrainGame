@@ -554,7 +554,16 @@
       else if (x.k === 'tunnel' || x.k === 'tunnel-no') sfx.bad();
       else if (x.k === 'over') sfx.end();
     }
-    if (e && e.k !== 'over') showToast(logText(e));
+    if (!e || e.k === 'over') return;
+    // A player's two card draws in one turn show together ("took red, drew from the deck").
+    const prev = ui.toastCard;
+    if (e.k === 'card' && prev && prev.p === e.p && prev.s === e.s - 1 && ui.toast) {
+      ui.toastCard = null;
+      showToast(logText(prev) + ', ' + (e.c >= 0 ? `${t('log_took')} ${cardHTML(e.c, null, 'xs')}` : t('log_blind')));
+      return;
+    }
+    ui.toastCard = e.k === 'card' ? e : null;
+    showToast(logText(e));
   }
   function showToast(html) {
     clearTimeout(ui.toastTimer);

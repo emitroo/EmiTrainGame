@@ -9,6 +9,7 @@ export default {
   blurb: 'Official 1911 board for 2–4: Mandala bonus for joining a ticket\u2019s cities two separate ways.',
   rules: { trains: 45, players: [2, 4], doubleMin: 4, deal: { short: 4, keep: 2 }, bonus: ['longest', 'mandala'], tie: ['tickets', 'longest'] },
   layout: { kind: 'board', aspect: 1.333 },
+  width: 800, // drawn smaller than the other boards so its cars come out the standard size
   bbox: [60, 5, 98, 37],
   cities: {
     agra: ["Agra", 78.01, 27.18, 42.4, 38.8],

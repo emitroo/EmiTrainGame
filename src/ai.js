@@ -262,16 +262,18 @@
   function drawCard(G, p, level, needs, second) {
     const market = G.market;
     const can = (slot) => E.canTakeCard(G, slot);
-    // Face-up colour we need most.
-    let bestSlot = -2, bestNeed = 0;
+    // Value each face-up card the way a player would: a colour the plan still needs is worth most; gray routes take any
+    // one colour, so the colour we already hold most of comes next; otherwise building up a set still helps later.
+    // A blind draw is worth about one useful card, so a face-up card is taken when it beats that.
+    const hand = G.hands[p];
+    let bestSlot = -1, bestV = 0;
     market.forEach((c, i) => {
       if (c < 0 || c === LOCO || !can(i)) return;
-      let v = needs.deficit[c];
-      if (!v && needs.gray) v = 0.5;
-      if (level === 'easy') v += jitter(G, p, i) * 2;
-      if (v > bestNeed) { bestNeed = v; bestSlot = i; }
+      let v = needs.deficit[c] > 0 ? 2 + needs.deficit[c] : needs.gray > 0 ? 1 + 0.4 * hand[c] : 0.3 * hand[c];
+      v += jitter(G, p, i) * (level === 'easy' ? 2 : 0.4);
+      if (v > bestV) { bestV = v; bestSlot = i; }
     });
-    if (bestSlot >= 0) return { k: 'card', slot: bestSlot };
+    if (bestSlot >= 0 && bestV >= (level === 'hard' ? 1.1 : 0.9)) return { k: 'card', slot: bestSlot };
     const free = E.rulesOf(G).locoDrawFree;
     if (free) {
       // Where a face-up locomotive is just one card, it is always worth taking.

@@ -1,8 +1,10 @@
 // Builds src/maps.js from the region specs in maps-src/.
 //
 // A spec lists real cities (longitude/latitude) and the route network as text lines. This script:
-//   - projects the cities (Mercator) onto a 1000-unit-wide board and nudges apart any that would overlap;
+//   - projects the cities (Mercator) onto a 1000-unit-wide board (or spec.width) and nudges apart any that would overlap;
 //   - fills in route lengths from real distances, and colours balanced across the eight card colours;
+//   - gives every car on a board the same length, like the plastic pieces: cities are moved (each route keeping its
+//     direction) so routes are as long as their cars need, the geography is warped along, and routes still short arc out;
 //   - lays out the train-car slots of every route (bending routes that would cross a city, offsetting doubles);
 //   - generates the destination tickets from shortest paths (points = trains on the shortest path);
 //   - clips Natural Earth coastlines, lakes and borders to the board (public domain, naturalearthdata.com).
@@ -19,11 +21,12 @@ import { execFileSync } from 'node:child_process';
 const ROOT = new URL('../', import.meta.url);
 const COLORS = ['purple', 'white', 'blue', 'yellow', 'orange', 'black', 'red', 'green'];
 const GRAY = -1;
-const W = 1000;
+let W = 1000; // board width in units; a spec can draw its board smaller (bigger cars, cities and names relative to it)
 const CITY_R = 7;
 const CAR_W = 8;
+const PIECE_W = 11; // a placed train piece with its rim is wider than the printed space; keep pieces of different routes apart
 const GAP = 2.2;
-const DOUBLE_OFF = 5.4;
+const DOUBLE_OFF = 5.6;
 const MIN_CITY_DIST = 30;
 
 // ---------- Natural Earth ----------
@@ -311,7 +314,7 @@ const distToPoly = (p, pts) => { let m = Infinity; for (let i = 1; i < pts.lengt
 // Oriented-rectangle overlap (separating axis), slots are [x, y, angleRad, len].
 function slotsOverlap(s, t) {
   const corners = (q) => {
-    const c = Math.cos(q[2]), si = Math.sin(q[2]), hl = q[3] / 2, hw = CAR_W / 2;
+    const c = Math.cos(q[2]), si = Math.sin(q[2]), hl = q[3] / 2, hw = PIECE_W / 2;
     return [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([u, v]) => [q[0] + u * c - v * si, q[1] + u * si + v * c]);
   };
   const A = corners(s), B = corners(t);
@@ -323,8 +326,87 @@ function slotsOverlap(s, t) {
   return true;
 }
 
+// ---------- one car length per board ----------
+const CLEAR = CITY_R + 3; // room between a city and the first car of a route
+const needLen = (len, car) => len * car + (len - 1) * GAP + 2 * CLEAR;
+const bendFactor = (bend, chord) => 1 + (8 / 3) * (bend / Math.max(chord, 1)) ** 2; // quadratic arc length / chord
+/** Pick the board's car length, then place the cities so that every route is as long as its cars need. Each route keeps
+ *  the direction it has on the map and asks for its length; every city is held near where it was. That is a linear
+ *  least-squares problem (solved exactly, so cities cannot swap places or drift), then the result is scaled back to fill
+ *  the same part of the board, and the car length scales with it. */
+function fitToRoutes(cities, routes, h, spec, add) {
+  const pairs = new Map();
+  for (const r of routes) { const k = Math.min(r.a, r.b) + '-' + Math.max(r.a, r.b); if (!pairs.has(k)) pairs.set(k, r); }
+  const n = cities.length, P0 = cities.map((c) => [c.x, c.y]);
+  const chord0 = (r) => Math.hypot(P0[r.b][0] - P0[r.a][0], P0[r.b][1] - P0[r.a][1]);
+  // Room each route needs at its two ends before the first car, from the angles between the routes at each city
+  // (the fit keeps every route's direction, so these angles do not change).
+  const room = new Map();
+  cities.forEach((c, ci) => {
+    const hs = [...pairs.values()].filter((r) => r.a === ci || r.b === ci).map((r) => {
+      const o = r.a === ci ? r.b : r.a, double = routes.some((q) => q !== r && Math.min(q.a, q.b) === Math.min(r.a, r.b) && Math.max(q.a, q.b) === Math.max(r.a, r.b));
+      return { r, ang: Math.atan2(P0[o][1] - P0[ci][1], P0[o][0] - P0[ci][0]), w: double ? PIECE_W + 2 * DOUBLE_OFF : PIECE_W };
+    });
+    for (const h of hs) {
+      let need = CLEAR;
+      for (const o of hs) {
+        if (o === h) continue;
+        let d = Math.abs(h.ang - o.ang); if (d > Math.PI) d = 2 * Math.PI - d;
+        if (d < Math.PI / 2) need = Math.max(need, ((h.w + o.w) / 2 + 1.5) / Math.sin(Math.max(d, 0.12)));
+      }
+      room.set(h.r, (room.get(h.r) || 0) + Math.min(need, 60));
+    }
+  });
+  const natural = [...pairs.values()].map((r) => (chord0(r) * bendFactor(r.bend || 0, chord0(r)) - room.get(r) - (r.len - 1) * GAP) / r.len).sort((a, b) => a - b);
+  let car = spec.carLength || natural[Math.floor(natural.length / 2)];
+  const roomOf = (r) => room.get(pairs.get(Math.min(r.a, r.b) + '-' + Math.max(r.a, r.b)));
+  if (spec.fitRoutes === false) return { car, roomOf };
+  const lam = spec.fitAnchor != null ? spec.fitAnchor : 0.03;
+  const A = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? lam : 0)));
+  const bx = P0.map((p) => lam * p[0]), by = P0.map((p) => lam * p[1]);
+  for (const r of pairs.values()) {
+    const ux = (P0[r.b][0] - P0[r.a][0]) / chord0(r), uy = (P0[r.b][1] - P0[r.a][1]) / chord0(r);
+    const t = (r.len * car + (r.len - 1) * GAP + room.get(r) + (add.get(Math.min(r.a, r.b) + '-' + Math.max(r.a, r.b)) || 0)) / bendFactor(r.bend || 0, chord0(r));
+    // (Pb - Pa) should equal t * u
+    A[r.a][r.a] += 1; A[r.b][r.b] += 1; A[r.a][r.b] -= 1; A[r.b][r.a] -= 1;
+    bx[r.b] += t * ux; by[r.b] += t * uy; bx[r.a] -= t * ux; by[r.a] -= t * uy;
+  }
+  const X = solve(A.map((row) => row.slice()), bx), Y = solve(A.map((row) => row.slice()), by);
+  // Back into the same box the cities used to fill; every length (the car's too) scales by the same factor.
+  const box = (xs, ys) => [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  const [ox0, oy0, ox1, oy1] = box(P0.map((p) => p[0]), P0.map((p) => p[1])), [nx0, ny0, nx1, ny1] = box(X, Y);
+  const s = Math.min((ox1 - ox0) / (nx1 - nx0), (oy1 - oy0) / (ny1 - ny0));
+  const cx = (ox0 + ox1) / 2 - s * (nx0 + nx1) / 2, cy = (oy0 + oy1) / 2 - s * (ny0 + ny1) / 2;
+  cities.forEach((c, i) => { c.x = cx + s * X[i]; c.y = cy + s * Y[i]; });
+  car = spec.carLength || car * s;
+  // Keep cities far enough apart to tap and label.
+  const minDist = spec.layout && spec.layout.kind === 'board' ? 24 : MIN_CITY_DIST;
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = cities[i], b = cities[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01;
+      if (d >= minDist) continue;
+      const push = (minDist - d) / 2 + 0.1;
+      a.x -= (dx / d) * push; a.y -= (dy / d) * push; b.x += (dx / d) * push; b.y += (dy / d) * push;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return { car, roomOf };
+}
+/** Thin-plate warp of board coordinates taking the cities from where they were to where they ended up, pinned far
+ *  outside the board so the edges stay calm. */
+function cityWarp(from, to) {
+  const n = (p) => [p[0] / W, p[1] / W];
+  const src = from.map(n), dst = to.map(n);
+  for (const [ux, uy] of [[-1, -1], [0.5, -1], [2, -1], [-1, 0.5], [2, 0.5], [-1, 2], [0.5, 2], [2, 2]]) { src.push([ux, uy]); dst.push([ux, uy]); }
+  const f = thinPlate(src, dst, 0.0005);
+  return (q) => { const r = f(n(q)); return [r[0] * W, r[1] * W]; };
+}
+
 // ---------- build one map ----------
 function build(spec, ne) {
+  W = spec.width || 1000;
   const board = spec.layout && spec.layout.kind === 'board';
   const ids = Object.keys(spec.cities);
   const idx = new Map(ids.map((id, i) => [id, i]));
@@ -335,7 +417,7 @@ function build(spec, ne) {
     const [name, lon, lat, a, b, country] = spec.cities[id];
     return board ? { id, name, lon, lat, bx: a, by: b, country: country ? countryIds.indexOf(country) : -1 } : { id, name, lon, lat, dx: a || 0, dy: b || 0, country: -1 };
   });
-  const proj = board ? makeBoardProjection(spec, raw) : makeProjection(spec.bbox);
+  let proj = board ? makeBoardProjection(spec, raw) : makeProjection(spec.bbox);
   const cities = raw.map((c) => {
     const [px, py] = board ? [(c.bx / 100) * W, (c.by / 100) * proj.h] : proj.p(c.lon, c.lat);
     const x = px + (c.dx || 0), y = py + (c.dy || 0);
@@ -419,7 +501,9 @@ function build(spec, ne) {
 
   // Geometry: curves first, then where each route's cars start and end at its two cities.
   const P = (i) => [cities[i].x, cities[i].y];
-  for (const r of routes) {
+  const cityClear = (pts, r) => { let m = Infinity; cities.forEach((c, k) => { if (k !== r.a && k !== r.b) m = Math.min(m, distToPoly([c.x, c.y], pts)); }); return m; };
+  const extra = new Map(); // more length a route needs, found after the cars at crowded cities were pushed out
+  const shape = (r) => {
     const A = P(r.a), B = P(r.b);
     let bend = r.bend;
     if (!bend) {
@@ -438,20 +522,35 @@ function build(spec, ne) {
         bend += side * (CITY_R + 12 - worst.d + 4);
       }
     }
+    // Too short for its cars at the board's car length: arc it out until it is long enough (the inner track of a
+    // double route is the shorter one), on the side that keeps clear of other cities.
+    const need = needLen(r.len, CAR) + (r.side ? DOUBLE_OFF * 0.6 : 0) + (extra.get(r.a + '-' + r.b) || 0);
+    if (polyLen(curve(A, B, bend)) < need) {
+      const sides = bend ? [Math.sign(bend)] : [1, -1];
+      let best = null;
+      for (const sg of sides) {
+        let b2 = bend;
+        const chordAB = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        for (let it = 0; it < 80 && polyLen(curve(A, B, b2)) < need && Math.abs(b2) < chordAB * 0.32; it++) b2 += sg * 1.5;
+        const clear = cityClear(curve(A, B, b2), r);
+        if (!best || clear > best.clear) best = { b: b2, clear };
+      }
+      bend = best.b;
+    }
     r.center = curve(A, B, bend);
     r.path = r.side ? offsetPolyline(r.center, r.side * DOUBLE_OFF) : r.center;
-  }
+  };
   // Routes leaving a city at a narrow angle start their cars further out, where they no longer touch.
   const headings = (city) => routes.map((r, i) => {
     if (r.a !== city && r.b !== city) return null;
     const pts = r.a === city ? r.center : r.center.slice().reverse();
-    return { i, ang: Math.atan2(pts[3][1] - pts[0][1], pts[3][0] - pts[0][0]), w: r.side ? CAR_W + 2 * DOUBLE_OFF : CAR_W };
+    return { i, ang: Math.atan2(pts[3][1] - pts[0][1], pts[3][0] - pts[0][0]), w: r.side ? PIECE_W + 2 * DOUBLE_OFF : PIECE_W };
   }).filter(Boolean);
   const startAt = new Map();
-  cities.forEach((c, ci) => {
+  const clearances = () => cities.forEach((c, ci) => {
     const hs = headings(ci);
     for (const h of hs) {
-      let need = CITY_R + 2.5;
+      let need = CLEAR;
       for (const o of hs) {
         const same = routes[o.i].side && routes[h.i].side && [routes[o.i].a, routes[o.i].b].sort().join() === [routes[h.i].a, routes[h.i].b].sort().join();
         if (o.i === h.i || o.i === routes[h.i].pair || same) continue;
@@ -462,16 +561,50 @@ function build(spec, ne) {
       startAt.set(h.i + ':' + ci, need);
     }
   });
-  for (const r of routes) {
+  const ends = (r, i) => { const cap = polyLen(r.path) * 0.3; return [Math.min(cap, startAt.get(i + ':' + r.a)), Math.min(cap, startAt.get(i + ':' + r.b))]; };
+  // Every train car on a board is the same size, as with the plastic pieces. Cities are nudged so each route is long
+  // enough for its cars (plus the room its ends need at crowded cities, measured each round), routes still too short
+  // arc out a little, and in the end the geography is warped along with the cities.
+  const anchor = cities.map((c) => [c.x, c.y]), add = new Map();
+  let CAR = 0;
+  for (let round = 0; round < 7; round++) {
+    cities.forEach((c, i) => { c.x = anchor[i][0]; c.y = anchor[i][1]; });
+    const { roomOf } = fitToRoutes(cities, routes, proj.h, spec, add);
+    // The car length: what nearly every route has room for (the few that don't arc out a little, or get more room in
+    // the next round). Capped so cars keep the proportions of the plastic pieces.
+    if (!round) {
+      const roomNow = routes.map((r) => { const c = Math.hypot(cities[r.b].x - cities[r.a].x, cities[r.b].y - cities[r.a].y); return (c * bendFactor(r.bend || 0, c) - roomOf(r) - (r.len - 1) * GAP) / r.len; }).sort((x, y) => x - y);
+      CAR = spec.carLength || Math.min(34, roomNow[Math.floor(roomNow.length * 0.2)]);
+    }
+    extra.clear();
+    for (let pass = 0; pass < 40; pass++) {
+      routes.forEach(shape);
+      clearances();
+      let more = false;
+      routes.forEach((r, i) => {
+        const [sA, sB] = ends(r, i), short = r.len * CAR + (r.len - 1) * GAP - (polyLen(r.path) - sA - sB);
+        if (short > 0.5) { const k = r.a + '-' + r.b; extra.set(k, (extra.get(k) || 0) + short + 1); more = true; }
+      });
+      if (!more) break;
+    }
+    let left = false;
+    routes.forEach((r, i) => {
+      const [sA, sB] = ends(r, i), short = r.len * CAR + (r.len - 1) * GAP - (polyLen(r.path) - sA - sB);
+      if (short > 0.5) { const k = Math.min(r.a, r.b) + '-' + Math.max(r.a, r.b); add.set(k, (add.get(k) || 0) + short + 3); left = true; }
+    });
+    if (!left || spec.fitRoutes === false) break;
+  }
+  if (spec.fitRoutes !== false) {
+    const wp = cityWarp(anchor, cities.map((c) => [c.x, c.y])), base = proj;
+    proj = Object.assign({}, base, { fromSrc: (q) => wp(base.fromSrc(q)), p: (lon, lat) => wp(base.p(lon, lat)) });
+  }
+  routes.forEach((r, i) => {
     const pts = r.path, total = polyLen(pts);
-    const i = routes.indexOf(r);
-    const cap = total * 0.3;
-    const sA = Math.min(cap, startAt.get(i + ':' + r.a)), sB = Math.min(cap, startAt.get(i + ':' + r.b));
+    const [sA, sB] = ends(r, i);
     const usable = total - sA - sB;
-    const car = (usable - (r.len - 1) * GAP) / r.len;
-    if (car < 9) warnings.push(`crowded ${ids[r.a]}-${ids[r.b]} car ${car.toFixed(1)}`);
-    // Long stretches keep cars at a sensible size and spread them out with wider gaps.
-    const carL = Math.min(car, r.len === 1 ? 36 : 34);
+    // Every car is CAR long; a route with room to spare spreads its cars out evenly.
+    let carL = CAR;
+    if (r.len * CAR + (r.len - 1) * GAP > usable + 0.5) { carL = (usable - (r.len - 1) * GAP) / r.len; warnings.push(`short ${ids[r.a]}-${ids[r.b]} car ${carL.toFixed(1)} of ${CAR.toFixed(1)}` + (process.env.DEBUG ? ` len ${r.len} total ${total.toFixed(0)} sA ${sA.toFixed(0)} sB ${sB.toFixed(0)} chord ${Math.hypot(P(r.b)[0] - P(r.a)[0], P(r.b)[1] - P(r.a)[1]).toFixed(0)}` : '')); }
     const gap = r.len > 1 ? (usable - carL * r.len) / (r.len - 1) : 0;
     const d0 = sA + (r.len === 1 ? usable / 2 : carL / 2);
     r.slots = [];
@@ -479,7 +612,7 @@ function build(spec, ne) {
       const q = along(pts, d0 + k * (carL + gap));
       r.slots.push([q.x, q.y, q.ang, carL]);
     }
-  }
+  });
   // Report overlapping cars from different routes.
   for (let i = 0; i < routes.length; i++) for (let j = i + 1; j < routes.length; j++) {
     if (routes[i].pair === j || (routes[i].side && routes[j].side && [routes[i].a, routes[i].b].sort().join() === [routes[j].a, routes[j].b].sort().join())) continue;

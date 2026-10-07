@@ -9,6 +9,7 @@ export default {
   blurb: 'Official 2–3 player board: locomotives only on tunnels and ferries, and the 9-car run to Murmansk.',
   rules: { trains: 40, players: [2, 3], doubleMin: 3, deal: { short: 5, keep: 2 }, draw: { n: 3, keep: 1 }, ticketReturn: 'box', locoUse: 'tunnelFerry', locoDrawFree: true, ferrySub: 3, bonus: ['globetrotter'], tie: ['tickets', 'longest'] },
   layout: { kind: 'board', aspect: 1.49 },
+  width: 700, // drawn smaller than the other boards so its cars come out the standard size
   bbox: [2, 54, 36, 72],
   cities: {
     bergen: ["Bergen", 5.32, 60.39, 10.8, 76.0],

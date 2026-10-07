@@ -43,8 +43,11 @@ cross-checked against each other and against photos of the published boards:
   [Ticket to Ride wiki](https://ticket-to-ride.fandom.com/)'s city/route/ticket lists (with each city's position on the
   board) and the official rulebooks; checked against board photos. India's colours total exactly 20 cars each.
 
-Nordic, India and Switzerland use the cities' positions on the published boards, with real coastlines bent to fit;
-Europe and USA use real positions. All artwork is original (Natural Earth geography, own SVG trains and cards).
+Nordic, India and Switzerland start from the cities' positions on the published boards, Europe and USA from real
+positions. As on the printed boards, every train car on a board is the same length: cities are then moved slightly
+(each route keeping its direction) so that every route is as long as its cars need, the coastlines are bent along with
+them, and a route that is still short arcs out a little. All artwork is original (Natural Earth geography, own SVG
+trains and cards).
 
 ## Hosting: GitHub Pages
 
