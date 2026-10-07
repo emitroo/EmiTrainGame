@@ -416,8 +416,17 @@ div.map-choice { cursor: default; }
 .board-svg .city-shine { fill: #fff; opacity: 0.75; }
 .board-svg .labels text { font: 700 calc(11px * var(--lbl)) var(--f-display); text-transform: uppercase; letter-spacing: 0.4px; fill: #7a2414; stroke: rgba(244,234,210,0.9); stroke-width: 2.6px; }
 .board-svg .labels text.ctry { text-transform: none; font-style: italic; fill: #5e3418; }
-.board-svg .car { stroke-width: 1; }
+.board-svg .car { filter: none; stroke: none; }
+.board-svg .car-shadow { fill: rgba(30,16,6,0.42); }
+.board-svg .car-rim { fill: #fffaf0; stroke: rgba(40,24,10,0.6); stroke-width: 0.6; }
+.board-svg .car-body { stroke-width: 1.6; }
 .board-svg .car-sheen { stroke: none; pointer-events: none; }
+.board-svg .car-roof { fill: #fff; opacity: 0.38; }
+.board-svg .car-win { opacity: 0.8; }
+.board-svg .car-coupler { stroke-width: 1.3; stroke-linecap: round; }
+.board-svg .car-wheel { fill: #1a1714; stroke: #fff8e8; stroke-width: 0.45; }
+/* The printed spaces sit flat and slightly faded under the placed trains. */
+.board-svg .routes .slot { fill-opacity: 0.62; }
 .board-svg .frame-band { fill: url(#frame-pat); }
 .board-svg .frame-out { fill: none; stroke: #7a3b1e; stroke-width: 2; }
 .board-svg .frame-in { fill: none; stroke: #7a3b1e; stroke-width: 2; }

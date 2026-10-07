@@ -67,7 +67,8 @@ the middle, and face-up cards, decks and hand on the right. Tablets and desktops
 
 The board is drawn after the printed Europe board: icy sea with swirls, mottled parchment land, sepia borders,
 brown-edged route spaces with colour symbols, amber city markers, the route-points table, and the 0-99 score track of
-navy medallions around the edge with each player's marker on it.
+navy medallions around the edge with each player's marker on it. Claimed routes are drawn as raised train pieces (cream
+rim, cast shadow, windows and wheels) over the flatter printed spaces, so they stand out even on a route of the same colour.
 
 ## Play on separate phones
 

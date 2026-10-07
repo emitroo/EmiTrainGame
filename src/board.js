@@ -191,12 +191,24 @@
         const o = st.owner[i];
         if (o < 0) return;
         const fl = st.flash === i ? ' flash' : '';
+        // Placed trains look like the plastic pieces standing on the printed board: a cream rim that separates them from
+        // a route of the same colour, a cast shadow, a taller glossy body with windows, wheels and couplings.
+        const win = o === 4 ? '#e9e2d0' : PLAYER_DARK[o];
         r.slots.forEach((sl) => {
-          s += slotRect(sl, 'car' + fl, PLAYER_COLORS[o], ` stroke="${PLAYER_DARK[o]}"`);
-          s += slotRect(sl, 'car-sheen', 'url(#car-sheen)');
-          // A little wagon: window band, roof line and wheels.
-          const hl = sl[3] / 2;
-          s += `<g transform="translate(${sl[0]} ${sl[1]}) rotate(${sl[2]})" class="car-detail" fill="${PLAYER_DARK[o]}"><rect x="${-hl + 2.6}" y="-2.4" width="${sl[3] - 5.2}" height="2.2" rx=".6" fill="#fff" opacity=".42"/><path d="M${-hl + 1.4} -3.3H${hl - 1.4}" stroke="${PLAYER_DARK[o]}" stroke-width=".7" opacity=".7"/><circle cx="${-hl + 3.2}" cy="3.6" r="1.5"/><circle cx="${hl - 3.2}" cy="3.6" r="1.5"/></g>`;
+          const L = sl[3], hl = L / 2, n = Math.max(1, Math.floor((L - 5) / 3.6)), ww = 2, gap = (L - 5 - n * ww) / Math.max(1, n - 1);
+          let w = '';
+          for (let k = 0; k < n; k++) w += `<rect x="${(n === 1 ? -ww / 2 : -hl + 2.5 + k * (ww + gap)).toFixed(2)}" y="-2.1" width="${ww}" height="2.3" rx=".4"/>`;
+          // The shadow falls the same way (down and right) whatever the direction of the route.
+          s += `<g class="car${fl}"><rect class="car-shadow" x="${-hl + 0.4}" y="-4.6" width="${L - 0.8}" height="9.2" rx="2.6" transform="translate(${sl[0] + 1} ${sl[1] + 1.9}) rotate(${sl[2]})"/>`
+            + `<g transform="translate(${sl[0]} ${sl[1]}) rotate(${sl[2]})">`
+            + `<rect class="car-rim" x="${-hl - 0.8}" y="-5.8" width="${L + 1.6}" height="11.6" rx="3.4"/>`
+            + `<rect class="car-body" x="${-hl + 0.4}" y="-4.7" width="${L - 0.8}" height="9.4" rx="2.3" fill="${PLAYER_COLORS[o]}" stroke="${PLAYER_DARK[o]}"/>`
+            + `<rect class="car-sheen" x="${-hl + 0.4}" y="-4.7" width="${L - 0.8}" height="9.4" rx="2.3" fill="url(#car-sheen)"/>`
+            + `<rect class="car-roof" x="${-hl + 1.5}" y="-4" width="${L - 3}" height="1.3" rx=".65"/>`
+            + `<g class="car-win" fill="${win}">${w}</g>`
+            + `<path class="car-coupler" d="M${-hl - 1.2} 0.6H${-hl + 0.6}M${hl - 0.6} 0.6H${hl + 1.2}" stroke="${PLAYER_DARK[o]}"/>`
+            + `<circle class="car-wheel" cx="${-hl + 2.9}" cy="4.3" r="1.55"/><circle class="car-wheel" cx="${hl - 2.9}" cy="4.3" r="1.55"/>`
+            + '</g></g>';
         });
       });
       if (st.selRoute != null && st.selRoute >= 0) {
