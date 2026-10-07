@@ -1,0 +1,4 @@
+# Automatic HTTPS for the signalling server. Replace the host name with one pointing at this machine.
+signal.example.com {
+  reverse_proxy localhost:9000
+}

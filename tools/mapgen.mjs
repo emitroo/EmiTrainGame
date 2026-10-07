@@ -9,6 +9,7 @@
 // Usage: node tools/mapgen.mjs        (downloads the Natural Earth files into .cache/ne on first run)
 //
 // Route line format:  <city> <city> [length] [colour | colour/colour] [t] [fN] [x2] [b±N]
+// City entry: [name, longitude, latitude, dx?, dy?] (dx/dy nudge the dot in board units).
 //   length   trains (default: from distance and the spec's kmPerTrain)
 //   colour   purple white blue yellow orange black red green, or gray; default: balanced automatically
 //   t        tunnel;  fN  ferry needing N locomotives;  x2  double route;  b±N  bend the route sideways by N units
@@ -135,9 +136,9 @@ const fmt = (v) => String(Math.round(v * 10) / 10);
 const pathOf = (rings, closed) => rings.map((r) => 'M' + r.map((p) => fmt(p[0]) + ' ' + fmt(p[1])).join('L') + (closed ? 'Z' : '')).join('');
 
 function geoLayers(ne, proj, bbox, h) {
-  const pad = 4, [x0, y0, x1, y1] = [-pad, -pad, W + pad, h + pad];
+  const pad = 160, [x0, y0, x1, y1] = [-pad, -pad, W + pad, h + pad];
   const [lon0, lat0, lon1, lat1] = bbox;
-  const near = (coords) => coords.some(([lon, lat]) => lon > lon0 - 25 && lon < lon1 + 25 && lat > lat0 - 15 && lat < lat1 + 15);
+  const near = (coords) => coords.some(([lon, lat]) => lon > lon0 - 40 && lon < lon1 + 40 && lat > lat0 - 25 && lat < lat1 + 25);
   const polys = (features, minArea) => {
     const rings = [];
     for (const f of features) {
@@ -261,8 +262,9 @@ function build(spec, ne) {
   const ids = Object.keys(spec.cities);
   const idx = new Map(ids.map((id, i) => [id, i]));
   const cities = ids.map((id) => {
-    const [name, lon, lat] = spec.cities[id];
-    const [x, y] = proj.p(lon, lat);
+    const [name, lon, lat, dx, dy] = spec.cities[id];
+    const [px, py] = proj.p(lon, lat);
+    const x = px + (dx || 0), y = py + (dy || 0); // optional nudge in board units, for crowded corners
     return { id, name, lon, lat, x, y, x0: x, y0: y };
   });
   // Push apart cities that are too close to tap or label.
@@ -434,8 +436,17 @@ function build(spec, ne) {
       tickets.push({ a: best[0], b: best[1], pts: best[2], long: !!long });
     }
   };
+  if (T.list) {
+    // A fixed ticket deck: points as printed; flag any that differ from the shortest path, which catches route typos.
+    for (const [a, b, pts, long] of T.list) {
+      const ia = idx.get(a), ib = idx.get(b);
+      if (ia == null || ib == null) throw new Error(`${spec.id}: ticket ${a}-${b} names an unknown city`);
+      if (D[ia][ib] !== pts) warnings.push(`ticket ${a}-${b}: ${pts} pts, shortest path ${D[ia][ib]}`);
+      tickets.push({ a: ia, b: ib, pts, long: !!long });
+    }
+  }
   if (T.long) pick(T.long, T.longRange[0], T.longRange[1], true);
-  for (const [cnt, lo, hi] of T.bands) pick(cnt, lo, hi, false);
+  for (const [cnt, lo, hi] of T.bands || []) pick(cnt, lo, hi, false);
   tickets.sort((x, y) => (x.long - y.long) || x.pts - y.pts || x.a - y.a);
 
   // City labels: try eight spots around each city and keep the least crowded.

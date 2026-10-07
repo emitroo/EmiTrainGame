@@ -1,0 +1,29 @@
+name: Deploy to AWS
+
+# Uploads the app to the AWS copy (S3 + CloudFront) after each change. GitHub Pages keeps serving this branch as well.
+# Inactive until the repository variables from aws/deploy.sh are set. Uses GitHub's OIDC token for short-lived
+# credentials scoped to the site bucket and a CloudFront invalidation; no AWS keys are stored here.
+
+on:
+  push:
+    branches: [claude/emi-train-game-09t9sr]
+    paths: [index.html, sw.js, manifest.webmanifest, 'icon*', aws/upload-site.sh, .github/workflows/aws-deploy.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency: aws-deploy
+
+jobs:
+  deploy:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: bash aws/upload-site.sh "${{ vars.AWS_SITE_BUCKET }}" "${{ vars.AWS_DISTRIBUTION_ID }}"

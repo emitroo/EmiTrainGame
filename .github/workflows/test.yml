@@ -1,0 +1,27 @@
+name: Test
+
+# GitHub Pages serves this branch directly (Settings -> Pages -> Deploy from a branch, / root),
+# so this workflow checks the rules tests pass and that the committed build and maps are current.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: npm run build
+      - name: Check the committed build is up to date
+        run: git diff --exit-code -- index.html sw.js
+      - name: Lint the AWS template
+        run: pipx run cfn-lint aws/template.yaml

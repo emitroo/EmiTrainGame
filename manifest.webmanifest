@@ -1,0 +1,17 @@
+{
+  "name": "Emi Train Game",
+  "short_name": "Emi Trains",
+  "description": "Build railways across five regional maps. 2 to 5 players on one phone or several, online or offline, with CPU players.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2a1410",
+  "theme_color": "#2a1410",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

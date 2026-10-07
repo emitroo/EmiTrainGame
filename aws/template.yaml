@@ -1,0 +1,314 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Emi Train Game on AWS: the app on a private S3 bucket behind CloudFront, with security headers, usage alarms,
+  a cost budget and an automatic cut-off that keep it inside the free allowances. Deploy in us-east-1.
+  The game itself stays peer to peer; aws/signalling/ adds an optional private signalling server.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Where alarm, budget and cut-off emails go (confirm the two subscription emails after deploying).
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+  SignallingOrigin:
+    Type: String
+    Default: wss://0.peerjs.com
+    Description: WebSocket origin of the signalling server the page may connect to (your own, once aws/signalling is deployed).
+    AllowedPattern: '^wss://[A-Za-z0-9.-]+(:[0-9]+)?$'
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Monthly cost (before credits) at which the site is cut off. Emails at 50% actual and 100% forecast.
+  GitHubRepo:
+    Type: String
+    Default: emitroo/EmiTrainGame
+    Description: owner/repo allowed to deploy the site through GitHub Actions (OIDC, no stored keys).
+  DeployBranch:
+    Type: String
+    Default: claude/emi-train-game-09t9sr
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: false if this AWS account already has the token.actions.githubusercontent.com identity provider.
+
+Rules:
+  UsEast1Only:
+    Assertions:
+      - Assert: !Equals [!Ref 'AWS::Region', us-east-1]
+        AssertDescription: Deploy in us-east-1 (N. Virginia), where CloudFront metrics and alarms live.
+
+Conditions:
+  MakeOidc: !Equals [!Ref CreateGitHubOidcProvider, 'true']
+
+Resources:
+  # ---------- storage ----------
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFrontOnly
+            Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition: { StringEquals: { 'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}' } }
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt SiteBucket.Arn, !Sub '${SiteBucket.Arn}/*']
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } }
+
+  # ---------- CloudFront ----------
+  SiteOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig: { Name: !Sub '${AWS::StackName}-s3', OriginAccessControlOriginType: s3, SigningBehavior: always, SigningProtocol: sigv4 }
+
+  SecurityHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub '${AWS::StackName}-security'
+        SecurityHeadersConfig:
+          StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true }
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: DENY, Override: true }
+          ReferrerPolicy: { ReferrerPolicy: no-referrer, Override: true }
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub >-
+              default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+              img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${SignallingOrigin};
+              worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'
+        CustomHeadersConfig:
+          Items:
+            - { Header: Permissions-Policy, Value: 'camera=(self), microphone=(), geolocation=(), payment=()', Override: true }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Emi Train Game
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOac.Id
+            S3OriginConfig: { OriginAccessIdentity: '' }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeaders
+
+  # ---------- alerts and cut-off ----------
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Emi Train Game alerts
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+
+  CutoffTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Emi Train Game cut-off
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlertEmail }
+        - { Protocol: lambda, Endpoint: !GetAtt CutoffFn.Arn }
+
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic, !Ref CutoffTopic]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [budgets.amazonaws.com, cloudwatch.amazonaws.com] }
+            Action: sns:Publish
+            Resource: [!Ref AlertTopic, !Ref CutoffTopic]
+            Condition: { StringEquals: { 'aws:SourceAccount': !Ref 'AWS::AccountId' } }
+
+  CutoffFnLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-cutoff', RetentionInDays: 90 }
+
+  CutoffFnRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: cutoff
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [cloudfront:GetDistributionConfig, cloudfront:UpdateDistribution]
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+              - { Effect: Allow, Action: [logs:CreateLogStream, logs:PutLogEvents], Resource: !Sub '${CutoffFnLogs.Arn}' }
+
+  # Disables the CloudFront distribution. GitHub Pages is unaffected, so the game stays playable there.
+  CutoffFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-cutoff'
+      Description: Disables the CloudFront distribution when a usage alarm or the budget fires.
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt CutoffFnRole.Arn
+      LoggingConfig: { LogGroup: !Ref CutoffFnLogs }
+      Environment:
+        Variables:
+          DIST_ID: !Ref Distribution
+      Code:
+        ZipFile: |
+          const { CloudFrontClient, GetDistributionConfigCommand, UpdateDistributionCommand } = require('@aws-sdk/client-cloudfront');
+          const cf = new CloudFrontClient({});
+          exports.handler = async (ev) => {
+            const why = (ev.Records || []).map((r) => r.Sns && (r.Sns.Subject || '').slice(0, 120)).join('; ');
+            console.log('cut-off triggered:', why);
+            const cur = await cf.send(new GetDistributionConfigCommand({ Id: process.env.DIST_ID }));
+            if (cur.DistributionConfig.Enabled) {
+              cur.DistributionConfig.Enabled = false;
+              await cf.send(new UpdateDistributionCommand({ Id: process.env.DIST_ID, IfMatch: cur.ETag, DistributionConfig: cur.DistributionConfig }));
+            }
+            return { stopped: true, why };
+          };
+
+  CutoffFnPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CutoffFn
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref CutoffTopic
+
+  # Always free: CloudFront 10M requests and 1 TB out a month. Warn early by email; cut off well before that.
+  CfRequestsWarn:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: 'Warning: over 5,000 CloudFront requests in an hour.'
+      Namespace: AWS/CloudFront
+      MetricName: Requests
+      Dimensions: [{ Name: DistributionId, Value: !Ref Distribution }, { Name: Region, Value: Global }]
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  CfRequestsCutoff:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: 'Cut-off: over 300,000 CloudFront requests in a day.'
+      Namespace: AWS/CloudFront
+      MetricName: Requests
+      Dimensions: [{ Name: DistributionId, Value: !Ref Distribution }, { Name: Region, Value: Global }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref CutoffTopic]
+
+  CfBytesCutoff:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: 'Cut-off: over 30 GB served by CloudFront in a day.'
+      Namespace: AWS/CloudFront
+      MetricName: BytesDownloaded
+      Dimensions: [{ Name: DistributionId, Value: !Ref Distribution }, { Name: Region, Value: Global }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 30000000000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref CutoffTopic]
+
+  # Cost before credits, so it means something while sign-up credits hide the bill.
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${AWS::StackName}-monthly'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+        CostTypes: { IncludeCredit: false, IncludeRefund: false }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 50, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: SNS, Address: !Ref CutoffTopic }]
+
+  # ---------- deploys from GitHub Actions (short-lived credentials, site bucket + invalidation only) ----------
+  GitHubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com' }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubRepo}:ref:refs/heads/${DeployBranch}'
+      Policies:
+        - PolicyName: deploy-site
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - { Effect: Allow, Action: s3:ListBucket, Resource: !GetAtt SiteBucket.Arn }
+              - { Effect: Allow, Action: [s3:PutObject, s3:DeleteObject], Resource: !Sub '${SiteBucket.Arn}/*' }
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+Outputs:
+  SiteUrl:
+    Value: !Sub 'https://${Distribution.DomainName}/'
+  DistributionId:
+    Value: !Ref Distribution
+  SiteBucketName:
+    Value: !Ref SiteBucket
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
