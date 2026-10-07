@@ -225,12 +225,14 @@
     // ---------- view box ----------
     /** The drawable area: the map plus its frame. */
     bounds() { const m = this.map, F = frameOf(m); return { x: -F, y: -F, w: m.w + 2 * F, h: m.h + 2 * F }; }
-    /** Start view: the whole board in landscape; on a tall phone screen, zoomed in a little so the map fills more. */
+    /** Start view: the whole board on a big screen. On a phone, whose screen shape rarely matches the board's, zoomed
+     *  in (at most 1.6x in portrait, 1.45x in landscape) so the map fills more of the screen instead of leaving wide empty bands. */
     fit() {
       if (!this.map) return;
       const b = this.bounds(), r = this.host.getBoundingClientRect(), asp = r.width / (r.height || 1);
-      const contain = Math.max(b.w, b.h * asp);
-      const w = asp < 0.85 ? Math.max(b.h * asp, contain / 1.45) : contain;
+      const contain = Math.max(b.w, b.h * asp), cover = Math.min(b.w, b.h * asp);
+      const small = r.width < 700 || r.height < 560;
+      const w = small ? Math.max(cover, contain / (asp < 1 ? 1.6 : 1.45)) : contain;
       this.view = { x: b.x + (b.w - w) / 2, y: b.y, w, h: b.h };
       this.apply();
       this.view.y = b.y + (b.h - this.view.h) / 2;

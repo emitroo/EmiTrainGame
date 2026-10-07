@@ -36,7 +36,7 @@
 
   const ui = {
     screen: 'home', viewer: -1, handoff: null, sheet: null, peek: false,
-    sel: null, selCities: [], flash: null, toast: null, toastTimer: null, lastSeq: 0,
+    sel: null, selCities: [], pick: null, flash: null, toast: null, toastTimer: null, lastSeq: 0,
     gen: 0, cpuTimer: null, sent: false, error: '', joinStatus: '', joinCode: '', keep: null, board: null,
   };
   const net = {
@@ -410,20 +410,54 @@
       <div class="topbar"><button class="icon-btn" data-act="menu" aria-label="${t('menu')}">${ICON.menu}</button><div class="players" id="players"></div></div>
       <div class="board-wrap"><div id="board" class="board"></div>
         <div class="zoom"><button class="icon-btn" data-act="zoom-in" aria-label="${t('zoom_in')}">${ICON.plus}</button><button class="icon-btn" data-act="zoom-out" aria-label="${t('zoom_out')}">${ICON.minus}</button><button class="icon-btn" data-act="zoom-fit" aria-label="${t('zoom_fit')}">${ICON.fit}</button></div>
-        <div class="banner" id="banner" role="status"></div><div class="toast-wrap" id="toast"></div></div>
+        <div class="citybar" id="citybar" hidden></div><div class="toast-wrap" id="toast"></div></div>
+      <div class="banner" id="banner" role="status"></div>
       <div class="tray" id="tray"></div>`;
     ui.board = new B.Board($('#board'), {
-      route: (r) => { ui.sel = r; ui.selCities = []; ui.sheet = { type: 'route', r }; render(); },
-      city: (c) => { ui.sel = null; ui.selCities = [c]; ui.sheet = { type: 'city', c }; render(); },
-      empty: () => { if (ui.sel != null || ui.selCities.length) { ui.sel = null; ui.selCities = []; render(); } },
+      route: (r) => { ui.pick = null; ui.sel = r; ui.selCities = []; ui.sheet = { type: 'route', r }; render(); },
+      city: (c) => tapCity(c),
+      empty: () => {
+        const open = ui.sheet && (ui.sheet.type === 'route' || ui.sheet.type === 'city');
+        if (ui.sel != null || ui.selCities.length || ui.pick != null || open) { ui.sel = null; ui.selCities = []; ui.pick = null; if (open) ui.sheet = null; render(); }
+      },
     });
+  }
+
+  /** Tap one city, then a neighbouring city: the route between them opens for payment. Tapping a city that is not a
+   *  neighbour starts again from it; tapping the same city again lets it go. */
+  function tapCity(c) {
+    const A = ui.pick, m = MAP();
+    if (A === c) { ui.pick = null; ui.selCities = []; ui.sheet = null; render(); return; }
+    if (A != null) {
+      const rs = m.routes.map((rt, r) => (((rt.a === A && rt.b === c) || (rt.a === c && rt.b === A)) ? r : -1)).filter((r) => r >= 0);
+      if (rs.length) { const r = bestRoute(rs); ui.pick = null; ui.sel = r; ui.selCities = [A, c]; ui.sheet = { type: 'route', r }; render(); return; }
+    }
+    ui.pick = c; ui.sel = null; ui.selCities = [c]; ui.sheet = null; render();
+  }
+  /** Of parallel routes between two cities, the one the viewer can pay for, else a free one, else the first. */
+  function bestRoute(rs) {
+    const g = G(), v = viewerSeat();
+    const free = rs.filter((r) => g.owner[r] < 0);
+    if (v >= 0 && myTurn() && !g.step && !g.offer[v]) { const ok = free.find((r) => E.paymentOptions(g, v, r).length); if (ok != null) return ok; }
+    const open = v >= 0 ? free.find((r) => !E.routeBlock(g, v, r)) : null;
+    return open != null ? open : free.length ? free[0] : rs[0];
+  }
+  function cityBar() {
+    const el = $('#citybar'), c = ui.pick;
+    if (c == null || ui.sheet) { el.hidden = true; return; }
+    const R = E.rulesOf(G());
+    el.hidden = false;
+    el.innerHTML = `<span class="cb-text"><b>${esc(cityName(c))}</b> ${t('pick_second')}</span>`
+      + `<button class="btn btn-light btn-small" data-act="city-info">${R.stations ? ICON.station + t('station') : t('routes')}</button>`
+      + `<button class="close-btn" data-act="unpick" aria-label="${t('close')}">${ICON.close}</button>`;
   }
 
   function renderGame() {
     ensureGameSkeleton();
     const g = G(), m = MAP(), v = viewerSeat();
     ui.board.setMap(m);
-    ui.board.update({ owner: g.owner, stationAt: g.stationAt, selRoute: ui.sel, selCities: ui.selCities, flash: ui.flash, scores: Array.from({ length: g.n }, (_, p) => E.routeScore(g, p)) });
+    const hiRoutes = ui.pick != null ? m.routes.map((rt, r) => ((rt.a === ui.pick || rt.b === ui.pick) && g.owner[r] < 0 ? r : -1)).filter((r) => r >= 0) : [];
+    ui.board.update({ owner: g.owner, stationAt: g.stationAt, selRoute: ui.sel, selCities: ui.selCities, hiRoutes, flash: ui.flash, scores: Array.from({ length: g.n }, (_, p) => E.routeScore(g, p)) });
 
     // Players strip.
     const R = E.rulesOf(g);
@@ -436,6 +470,8 @@
         <span class="pname">${esc(name(p))}${s.cpu ? ' <small>CPU</small>' : ''}${off ? ' <small class="off">' + t('st_offline') + '</small>' : ''}</span>
         <span class="pstats"><b class="pscore">${E.routeScore(g, p)}</b><span title="${t('trains')}">${TRAIN_ICON}${g.trains[p]}</span><span title="${t('cards')}">▮${E.handSize(g, p)}</span><span title="${t('tickets')}">${ICON.ticket}${tickets}</span>${R.stations ? `<span title="${t('stations')}">${ICON.station}${g.stations[p]}</span>` : ''}</span></div>`;
     }).join('');
+
+    cityBar();
 
     // Banner.
     $('#banner').innerHTML = bannerText();
@@ -566,7 +602,8 @@
       default: body = '';
     }
     const bottom = ['route', 'city', 'my-tickets'].includes(sh.type) ? ' bottom' : '';
-    L.innerHTML = `<div class="overlay${bottom}" ${closable ? 'data-act="backdrop"' : ''}><div class="sheet sheet-${sh.type}" role="dialog" aria-modal="true">${body}</div></div>`;
+    const pass = sh.type === 'route' || sh.type === 'city' ? ' passthru' : ''; // the map stays tappable behind these
+    L.innerHTML = `<div class="overlay${bottom}${pass}" ${closable ? 'data-act="backdrop"' : ''}><div class="sheet sheet-${sh.type}" role="dialog" aria-modal="true">${body}</div></div>`;
   }
 
   /** Sheets the game itself opens: choosing tickets, deciding on a tunnel, the final scores. */
@@ -617,7 +654,7 @@
     const tags = [`<span class="chip">${t('len_n', { n: rt.len })}</span>`, `<span class="chip">${cardHTML(rt.color < 0 ? -1 : rt.color, null, 'xs')} ${esc(colorName(rt.color))}</span>`, `<span class="chip">${t('pts_n', { n: E.routePoints(rt.len) })}</span>`];
     if (rt.tunnel) tags.push(`<span class="chip warn">${t('tunnel')}</span>`);
     if (rt.ferry) tags.push(`<span class="chip warn">${t('ferry_n', { n: rt.ferry })}</span>`);
-    if (rt.pair >= 0) tags.push(`<span class="chip">${t('double')}</span>`);
+    if (rt.pair >= 0) { const tw = m.routes[rt.pair]; tags.push(`<button class="chip chip-btn" data-act="pick-route" data-v="${rt.pair}">${t('other_track')} ${cardHTML(tw.color < 0 ? -1 : tw.color, null, 'xs')}${g.owner[rt.pair] >= 0 ? ' ' + pdot(g.owner[rt.pair]) : ''}</button>`); }
     let body = `<div class="chips">${tags.join('')}</div>`;
     const o = g.owner[r];
     if (o >= 0) body += `<p class="owner">${pdot(o)}${esc(t('owned_by', { name: name(o) }))}</p>`;
@@ -843,7 +880,7 @@
   function act(a) {
     const v = viewerSeat();
     if (v < 0) return;
-    ui.sheet = null; ui.peek = false; ui.sel = null;
+    ui.sheet = null; ui.peek = false; ui.sel = null; ui.pick = null; ui.selCities = [];
     if (isGuest()) {
       if (ui.sent) return;
       if (guestSend({ t: 'act', seat: v, a })) { ui.sent = true; render(); }
@@ -1500,7 +1537,9 @@
       case 'station': act({ k: 'station', city: +el.dataset.city, cards: el.dataset.cards.split(',').map(Number) }); return;
       case 'tunnel-pay': act({ k: 'tunnel', pay: true, cards: el.dataset.cards.split(',').map(Number) }); return;
       case 'tunnel-no': act({ k: 'tunnel', pay: false }); return;
-      case 'pick-route': ui.sel = +v; ui.selCities = []; ui.sheet = { type: 'route', r: +v }; render(); return;
+      case 'pick-route': ui.pick = null; ui.sel = +v; ui.sheet = { type: 'route', r: +v }; render(); return;
+      case 'city-info': if (ui.pick != null) { ui.sheet = { type: 'city', c: ui.pick }; render(); } return;
+      case 'unpick': ui.pick = null; ui.selCities = []; render(); return;
       case 'keep-toggle': {
         if (ev.target.closest('[data-act="ticket-show"]')) return;
         const id = +v;
@@ -1516,7 +1555,7 @@
       case 'menu': ui.sheet = { type: 'menu' }; render(); return;
       case 'phones': ui.sheet = { type: 'phones' }; render(); return;
       case 'show-log': ui.sheet = { type: 'log' }; render(); return;
-      case 'close': case 'backdrop': ui.sheet = null; ui.sel = null; render(); return;
+      case 'close': case 'backdrop': ui.sheet = null; ui.sel = null; ui.pick = null; ui.selCities = []; render(); return;
       case 'toggle-sound': st.sound = !st.sound; persist(); render(); return;
       case 'toggle-hide': st.hideHands = !st.hideHands; persist(); ui.sheet = null; advance(); return;
       case 'ask-quit': ui.sheet = { type: 'confirm', text: 'confirm_quit', yes: 'yes_quit', act: 'quit' }; render(); return;

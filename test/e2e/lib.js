@@ -74,8 +74,19 @@ async function joinOnline(guest, code, name) {
   await guest.waitForSelector('.lobby-seats .lobby-seat', { timeout: 40000 });
 }
 
+/** Tap a city on the board where it is drawn on screen (centring the map on it first), with a finger on touch phones. */
+async function tapCity(p, c) {
+  const pt = await p.evaluate((c) => {
+    const bd = window.__emitrain.ui.board, ct = bd.map.cities[c];
+    bd.focus([c]);
+    const v = bd.view, r = bd.svg.getBoundingClientRect(), s = Math.min(r.width / v.w, r.height / v.h);
+    return { x: r.left + (r.width - v.w * s) / 2 + (ct.x - v.x) * s, y: r.top + (r.height - v.h * s) / 2 + (ct.y - v.y) * s, touch: navigator.maxTouchPoints > 0 };
+  }, c);
+  if (pt.touch) await p.touchscreen.tap(pt.x, pt.y); else await p.mouse.click(pt.x, pt.y);
+}
+
 /** One step of play through the UI on phone p, if it has something to do. The CPU logic picks the move;
- *  the test then performs it by tapping the real buttons (routes and cities through the board's tap handlers). */
+ *  the test then performs it by tapping the real buttons and the cities on the board. */
 async function uiStep(p, level) {
   const plan = await p.evaluate((lvl) => {
     const T = window.__emitrain, S = T.S, ui = T.ui;
@@ -104,10 +115,18 @@ async function uiStep(p, level) {
   if (a.k === 'card') await p.click(`#tray [data-act=take][data-v="${a.slot}"]`);
   else if (a.k === 'tickets') await p.click('#tray [data-act=draw-tickets]');
   else if (a.k === 'claim') {
-    await p.evaluate((r) => window.__emitrain.ui.board.handlers.route(r), a.r);
+    // Like a player: tap one end city, then the other; pick the other track of a double route if needed.
+    const rt = await p.evaluate((r) => { const m = window.__emitrain.ui.board.map.routes[r]; return { a: m.a, b: m.b, pair: m.pair }; }, a.r);
+    await tapCity(p, rt.a);
+    await tapCity(p, rt.b);
+    const open = await p.evaluate(() => { const s = window.__emitrain.ui.sheet; return s && s.type === 'route' ? s.r : -1; });
+    if (open === rt.pair && rt.pair >= 0) await p.click(`.sheet [data-act=pick-route][data-v="${a.r}"]`);
+    else if (open !== a.r) { p.tapMiss = (p.tapMiss || 0) + 1; await p.evaluate((r) => window.__emitrain.ui.board.handlers.route(r), a.r); }
     await p.click(`.pay[data-act=claim][data-cards="${a.cards.join(',')}"]`);
   } else if (a.k === 'station') {
-    await p.evaluate((c) => window.__emitrain.ui.board.handlers.city(c), a.city);
+    await tapCity(p, a.city);
+    if (await p.evaluate((c) => window.__emitrain.ui.pick !== c, a.city)) { p.tapMiss = (p.tapMiss || 0) + 1; await p.evaluate((c) => window.__emitrain.ui.board.handlers.city(c), a.city); }
+    await p.click('#citybar [data-act=city-info]');
     await p.click(`.pay[data-act=station][data-cards="${a.cards.join(',')}"]`);
   } else if (a.k === 'tunnel') {
     if (a.pay) await p.click(`.pay[data-act=tunnel-pay][data-cards="${a.cards.join(',')}"]`); else await p.click('[data-act=tunnel-no]');

@@ -56,9 +56,14 @@ On each phone, open the URL once and install it: Chrome → menu → **Install a
 Screen**. After that it opens offline. After an update the app fetches the new version in the background and reloads into it within a few seconds
 (unless a game is on screen, in which case the next launch shows it).
 
+**Claiming a route:** tap one city, then the next city along the route; the route between them opens with the ways you
+can pay. Its routes light up after the first tap, and the map stays tappable while a route is open, so a wrong pick is
+fixed by tapping another city. You can also tap a route directly. The bar that appears after the first tap has the
+**Station** button for that city.
+
 Phones work in both orientations. Portrait: players on top, map in the middle (zoomed to fill; pinch and drag), cards
-and hand at the bottom. Landscape: the map takes the full height on the left, with players, market and hand in a column
-on the right. Tablets and desktops get the landscape layout with larger cards.
+and hand at the bottom. Landscape: three columns, with players and the turn prompt on the left, the map at full height in
+the middle, and face-up cards, decks and hand on the right. Tablets and desktops show the map with a card column.
 
 The board is drawn after the printed Europe board: icy sea with swirls, mottled parchment land, sepia borders,
 brown-edged route spaces with colour symbols, amber city markers, the route-points table, and the 0-99 score track of

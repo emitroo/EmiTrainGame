@@ -34,6 +34,9 @@ jobs:
           curl -sf http://localhost:8765/ > /dev/null
       - name: One phone, 2 people + 1 CPU, Europe
         run: node test/e2e/one-phone.js europe 2 3
+      - name: Landscape phone, Switzerland
+        if: always()
+        run: LANDSCAPE=1 node test/e2e/one-phone.js switzerland 1 3
       - name: One phone vs CPUs on the other maps
         if: always()
         run: |
