@@ -4,7 +4,7 @@ A route-building train game after the board game Ticket to Ride, for 2 to 5 play
 on separate phones. Same design as [EBriscola](https://github.com/emitroo/EBriscola): one web page, no app store, no
 accounts, works offline once loaded.
 
-**Play:** https://emitroo.github.io/EmiTrainGame/ (once GitHub Pages is switched on, below).
+**Play:** https://emitroo.github.io/EmiTrainGame/
 
 ## Maps and rules
 
@@ -46,12 +46,11 @@ cross-checked against each other and against photos of the published boards:
 Nordic, India and Switzerland use the cities' positions on the published boards, with real coastlines bent to fit;
 Europe and USA use real positions. All artwork is original (Natural Earth geography, own SVG trains and cards).
 
-## Put it on GitHub Pages
+## Hosting: GitHub Pages
 
-The built `index.html` is committed, so GitHub Pages serves the repo as is. One setting, once:
-**Settings → Pages → Build and deployment → Source: Deploy from a branch → `claude/emi-train-game-09t9sr`
-(or `main` once merged), folder `/ (root)` → Save.** A minute later it is live at
-https://emitroo.github.io/EmiTrainGame/, and every push redeploys.
+The built `index.html` is committed and GitHub Pages serves the repo as is (Settings → Pages → Deploy from a branch,
+`claude/emi-train-game-09t9sr` or `main` once merged, folder `/ (root)`), so every push redeploys
+https://emitroo.github.io/EmiTrainGame/ within a minute or two.
 
 On each phone, open the URL once and install it: Chrome → menu → **Install app**; Safari → Share → **Add to Home
 Screen**. After that it opens offline.
