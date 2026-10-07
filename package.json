@@ -1,0 +1,12 @@
+{
+  "name": "emi-train-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Emi Train Game: a route-building train game for 2-5 players on one phone or several, with five regional maps.",
+  "scripts": {
+    "build": "node build.mjs",
+    "maps": "node tools/mapgen.mjs",
+    "test": "node --test test/*.test.js",
+    "site": "node build.mjs && rm -rf _site && mkdir _site && cp index.html sw.js manifest.webmanifest icon.svg icon-*.png _site/"
+  }
+}
