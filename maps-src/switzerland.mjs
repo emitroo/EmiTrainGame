@@ -12,6 +12,7 @@ export default {
   layout: { kind: 'board', aspect: 0.666 },
   bbox: [5.3, 45.4, 11.0, 48.2],
   lakes: 'all',
+  tints: true, // the Swiss board tints the neighbouring countries
   countries: { de: 'Deutschland', fr: 'France', it: 'Italia', at: 'Österreich' },
   cities: {
     baden: ["Baden", 8.31, 47.47, 48.2, 20.9],

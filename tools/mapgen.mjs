@@ -576,7 +576,7 @@ function build(spec, ne) {
     stats: { cities: n, routes: routes.length, trains: routes.reduce((s, r) => s + r.len, 0), gray: routes.filter((r) => r.color === GRAY).length, colorTrains, tickets: tickets.length },
     data: {
       id: spec.id, name: spec.name, blurb: spec.blurb, rules: spec.rules || {}, w: W, h: proj.h,
-      land: geo.land, lakes: geo.lakes, borders: geo.borders, tints: geo.tints,
+      land: geo.land, lakes: geo.lakes, borders: geo.borders, tints: spec.tints ? geo.tints : undefined,
       countries: countryIds.map((id) => ({ id, name: spec.countries[id], nodes: cities.map((c, i) => (c.country === countryIds.indexOf(id) ? i : -1)).filter((i) => i >= 0) })),
       cities: cities.map((c, i) => Object.assign({ id: c.id, name: c.name, x: r1(c.x), y: r1(c.y), lx: labels[i][0], ly: labels[i][1] }, c.country >= 0 ? { country: c.country } : {})),
       routes: routes.map((r) => ({

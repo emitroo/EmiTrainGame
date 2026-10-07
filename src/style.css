@@ -14,8 +14,8 @@
   --gold-hi: #f0d58c;
   --on-night: #f4e7c8;
   --on-night-dim: #c8ab82;
-  --sea: #a3b8b1;
-  --land: #ecdcae;
+  --sea: #d9e5ea;
+  --land: #e6d4b0;
   --ok: #3f7d3a;
   --f-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif;
   --f-body: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -31,7 +31,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 [hidden] { display: none !important; }
 .center { text-align: center; margin: 0; }
 
-.app { height: 100%; display: flex; flex-direction: column; }
+.app { height: 100%; height: 100dvh; display: flex; flex-direction: column; }
 .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .night-bg { background: radial-gradient(120% 70% at 50% 0%, rgba(201,154,62,0.18), transparent 65%), radial-gradient(circle at 50% 50%, transparent 60%, rgba(0,0,0,0.35)), repeating-radial-gradient(circle at 0 0, rgba(201,154,62,0.05) 0 2px, transparent 2px 18px), var(--night); }
 
@@ -395,28 +395,46 @@ div.map-choice { cursor: default; }
 .banner { left: 12px; top: 12px; right: 58px; background: rgba(42,20,16,0.88); border: 1px solid rgba(201,154,62,0.6); }
 .banner.go { background: rgba(142,35,28,0.95); border-color: var(--gold-hi); }
 .toast { background: var(--paper); border: 1px solid #a7813f; font-family: var(--f-body); }
-.board-svg .sea { fill: var(--sea); }
-.board-svg .coast-glow { fill: none; stroke: #c8d6cf; stroke-width: 7; stroke-linejoin: round; opacity: 0.85; }
-.board-svg .land { fill: var(--land); stroke: #7d6440; stroke-width: 0.9; }
-.board-svg .lake { fill: var(--sea); stroke: #7d6440; stroke-width: 0.5; }
-.board-svg .border { stroke: #a38654; stroke-width: 0.8; stroke-dasharray: 1 2.2; stroke-linecap: round; }
-.board-svg .guide { stroke: rgba(74,48,20,0.35); }
-.board-svg .slot { stroke: rgba(42,28,16,0.75); stroke-width: 0.7; }
-.board-svg .city-out { fill: #f5e9c8; stroke: #4a2a14; stroke-width: 1.2; }
-.board-svg .city { fill: #9c2a1e; stroke: #4a1a10; stroke-width: 0.9; }
-.board-svg .labels text { font: 700 calc(11.5px * var(--lbl)) var(--f-display); font-variant: small-caps; letter-spacing: 0.3px; fill: #3a2210; stroke: rgba(246,236,206,0.95); stroke-width: 3.2px; }
+/* The board itself, after the printed Europe board: pale icy sea, mottled parchment land, thin sepia borders,
+   brown-edged route spaces, amber city balls and a navy-medallion score track. */
+.board-wrap { background: #1f0f0b; }
+.board-svg .table { fill: #1f0f0b; }
+.board-svg .sea { fill: #d9e5ea; }
+.board-svg .coast-glow { fill: none; stroke: #f7fbfc; stroke-width: 9; stroke-linejoin: round; opacity: 0.95; }
+.board-svg .land { fill: #e6d4b0; stroke: #6e4a2c; stroke-width: 1.1; }
+.board-svg .lake { fill: #d9e5ea; stroke: #6e4a2c; stroke-width: 0.6; }
+.board-svg .border { fill: none; stroke: #7e5634; stroke-width: 0.9; stroke-dasharray: none; stroke-linejoin: round; opacity: 0.75; }
+.board-svg .guide { stroke: none; }
+.board-svg .slot { stroke: #4f3320; stroke-width: 1.15; }
+.board-svg .slot.white { stroke: #4f3320; }
+.board-svg .slot.tunnel { stroke: #141210; stroke-width: 2.1; stroke-dasharray: none; }
+.board-svg use.sym { fill: #fff; opacity: 0.8; }
+.board-svg use.sym.dark { fill: #7a6440; opacity: 0.7; }
+.board-svg .sym-loco { fill: #2d2a26; }
+.board-svg .city-halo { fill: #d39a6a; opacity: 0.32; }
+.board-svg .city-ball { fill: url(#city-ball); stroke: #5e2c0c; stroke-width: 0.9; }
+.board-svg .city-shine { fill: #fff; opacity: 0.75; }
+.board-svg .labels text { font: 700 calc(11px * var(--lbl)) var(--f-display); text-transform: uppercase; letter-spacing: 0.4px; fill: #7a2414; stroke: rgba(244,234,210,0.9); stroke-width: 2.6px; }
+.board-svg .labels text.ctry { text-transform: none; font-style: italic; fill: #5e3418; }
 .board-svg .car { stroke-width: 1; }
 .board-svg .car-sheen { stroke: none; pointer-events: none; }
-.board-svg .compass .c-ring { fill: rgba(243,230,196,0.55); stroke: #6b4a2a; stroke-width: 1; }
-.board-svg .compass .c-ring2 { fill: none; stroke: #6b4a2a; stroke-width: 0.6; stroke-dasharray: 1.5 1.5; }
-.board-svg .compass .c-dark { fill: #4a2a14; } .board-svg .compass .c-light { fill: #e9d6a6; stroke: #4a2a14; stroke-width: 0.4; }
-.board-svg .compass .c-n { font: 700 13px var(--f-display); fill: #4a2a14; text-anchor: middle; }
+.board-svg .frame-band { fill: url(#frame-pat); }
+.board-svg .frame-out { fill: none; stroke: #7a3b1e; stroke-width: 2; }
+.board-svg .frame-in { fill: none; stroke: #7a3b1e; stroke-width: 2; }
+.board-svg .medal circle { fill: url(#medal); stroke: #efe4cc; stroke-width: 1.4; }
+.board-svg .medal text { fill: #f5ecd6; text-anchor: middle; font-family: var(--f-display); font-weight: 700; }
+.board-svg .marker { stroke-width: 1.4; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.55)); transition: cx 0.4s, cy 0.4s; }
+.board-svg .cartouche .ct-box { fill: #f4ead2; stroke: #7a3b1e; stroke-width: 1.4; }
+.board-svg .cartouche .ct-in { fill: none; stroke: #b5532c; stroke-width: 0.6; }
+.board-svg .cartouche .ct-n, .board-svg .cartouche .ct-p { font: 700 10px var(--f-display); fill: #4a2410; }
+.board-svg .cartouche .ct-p { text-anchor: end; }
+.board-svg .cartouche .ct-car { fill: #d9cdb2; stroke: #4f3320; stroke-width: 0.6; }
 
 /* Train cards as printed cards: a cream border and a coloured face. */
 .tc { border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.45), inset 0 0 0 2px rgba(255,246,222,0.75), inset 0 0 0 3px rgba(0,0,0,0.15); }
-.tc.k0 { background: #c46a9e; } .tc.k1 { background: #f1ece0; } .tc.k2 { background: #3b6ea8; } .tc.k3 { background: #e4bc3a; }
-.tc.k4 { background: #dc7f2e; } .tc.k5 { background: #2b2723; } .tc.k6 { background: #b8342b; } .tc.k7 { background: #4b8a45; }
-.tc.loco { background: conic-gradient(from 200deg, #b8342b, #dc7f2e, #e4bc3a, #4b8a45, #3b6ea8, #c46a9e, #b8342b); }
+.tc.k0 { background: #b17cc8; } .tc.k1 { background: #f5f4ef; } .tc.k2 { background: #2e9ad6; } .tc.k3 { background: #f1d33b; }
+.tc.k4 { background: #ec962b; } .tc.k5 { background: #3b3e44; } .tc.k6 { background: #cf2f2b; } .tc.k7 { background: #74b342; }
+.tc.loco { background: conic-gradient(from 200deg, #cf2f2b, #ec962b, #f1d33b, #74b342, #2e9ad6, #b17cc8, #cf2f2b); }
 .tc.back { background: linear-gradient(135deg, #5a2219, #2a1410); color: var(--gold-hi); box-shadow: 0 2px 4px rgba(0,0,0,0.45), inset 0 0 0 2px var(--brass); }
 .tc .cnt { background: var(--paper); box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 0 0 1px #a7813f; font-family: var(--f-body); }
 .tk-back { background: linear-gradient(135deg, #f7ecd0, #dcc48c); box-shadow: 0 2px 4px rgba(0,0,0,0.45), inset 0 0 0 1.5px #a7813f; }
@@ -449,3 +467,54 @@ div.map-choice { cursor: default; }
 .ho-train { width: 160px; }
 .pstats svg.train-art { width: 18px; height: 10px; }
 .deck-btn .tc.back .train-art { width: 76%; }
+
+/* ---------- phones ---------- */
+/* Portrait: player chips share the width (two rows for 4-5 players) instead of scrolling off screen. */
+@media (max-width: 600px) and (orientation: portrait) {
+  .players { flex-wrap: wrap; overflow: visible; gap: 4px; }
+  .pchip { flex: 1 1 30%; min-width: 0; max-width: none; padding: 3px 5px 3px 8px; }
+  .pname { font-size: 12px; }
+  .pstats { gap: 0 5px; font-size: 10.5px; flex-wrap: wrap; white-space: normal; }
+  .pstats svg { width: 11px; height: 11px; }
+  .pstats svg.train-art { width: 15px; height: 8px; }
+  .pscore { font-size: 14px; }
+  .banner { font-size: 12.5px; padding: 6px 9px; }
+}
+/* Landscape phone: the map takes the left of the screen at full height; players, market and hand sit in a
+   scrolling column on the right. Sheets slide in over that column so the map stays visible. */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --card-w: 42px; }
+  #game { padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+    grid-template-columns: minmax(0, 1fr) clamp(250px, 34vw, 330px); grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "board top" "board tray"; }
+  .topbar { align-items: flex-start; padding: 6px 6px 4px; min-height: 0; border-bottom: 0; border-left: 1px solid var(--brass); }
+  .topbar .icon-btn { width: 36px; height: 36px; }
+  .players { flex-wrap: wrap; overflow: visible; gap: 4px; }
+  .pchip { flex: 1 1 40%; min-width: 0; max-width: none; padding: 2px 5px 2px 8px; }
+  .pname { font-size: 12px; }
+  .pstats { gap: 0 5px; font-size: 10.5px; flex-wrap: wrap; white-space: normal; }
+  .pstats svg { width: 11px; height: 11px; }
+  .pstats svg.train-art { width: 15px; height: 8px; }
+  .pscore { font-size: 14px; }
+  .tray { border-top: 0; border-left: 1px solid var(--brass); padding: 4px 6px calc(6px + env(safe-area-inset-bottom, 0px)); gap: 6px; overflow-y: auto; justify-content: flex-start; }
+  .market-row { flex-wrap: wrap; justify-content: flex-start; gap: 6px 8px; }
+  .hand-row { flex-wrap: wrap; align-items: flex-start; }
+  .hand { flex: 1 1 100%; flex-wrap: wrap; overflow: visible; gap: 8px 6px; padding: 6px 2px 0; }
+  .my-tix { flex: 1; justify-content: center; padding: 6px 10px; }
+  .banner { left: 8px; top: 8px; right: 52px; font-size: 12px; padding: 5px 8px; }
+  .zoom { right: 8px; top: 8px; gap: 4px; }
+  .zoom .icon-btn { width: 34px; height: 34px; }
+  .board-wrap::after { box-shadow: inset 0 0 0 2px var(--night), inset 0 0 0 3px var(--brass); }
+  .overlay { padding: 8px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .overlay.bottom { align-items: flex-start; justify-content: flex-end; padding-right: calc(8px + env(safe-area-inset-right, 0px)); }
+  .overlay.bottom .sheet { max-height: 100%; max-width: min(440px, 56vw); }
+  .sheet { padding: 12px; gap: 10px; }
+  .peek-back { left: calc(50% - clamp(250px, 34vw, 330px) / 2); bottom: 16px; }
+  .handoff .ho-train { width: 110px; }
+  .setup-wrap { padding-top: calc(8px + env(safe-area-inset-top, 0px)); gap: 10px; padding-left: calc(16px + env(safe-area-inset-left, 0px)); padding-right: calc(16px + env(safe-area-inset-right, 0px)); }
+  .wordmark { font-size: 30px; }
+  .wordmark-sub { margin-top: 2px; }
+  .brand { padding-bottom: 10px; }
+  .brand-train { width: 60px; }
+  .handoff .ho-name { font-size: 30px; }
+}

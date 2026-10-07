@@ -423,7 +423,7 @@
     ensureGameSkeleton();
     const g = G(), m = MAP(), v = viewerSeat();
     ui.board.setMap(m);
-    ui.board.update({ owner: g.owner, stationAt: g.stationAt, selRoute: ui.sel, selCities: ui.selCities, flash: ui.flash });
+    ui.board.update({ owner: g.owner, stationAt: g.stationAt, selRoute: ui.sel, selCities: ui.selCities, flash: ui.flash, scores: Array.from({ length: g.n }, (_, p) => E.routeScore(g, p)) });
 
     // Players strip.
     const R = E.rulesOf(g);
