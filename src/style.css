@@ -214,7 +214,7 @@ div.map-choice { cursor: default; }
 
 /* Train cards: colour, a train, a symbol (for colour-blind players) and a count. */
 .tc { position: relative; display: inline-grid; place-items: center; width: var(--card-w); height: calc(var(--card-w) * 0.66); border-radius: 6px; flex: none; color: rgba(255,255,255,0.88); box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 0 0 2px rgba(255,255,255,0.22); vertical-align: middle; }
-.tc svg { width: 64%; }
+.tc svg { width: 80%; }
 .tc .glyph { position: absolute; left: 3px; top: 0; font-style: normal; font-size: 10px; font-weight: 800; line-height: 1.2; }
 .tc .cnt { position: absolute; right: -5px; top: -6px; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 10px; background: var(--paper); color: var(--ink); font-size: 12px; display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.5); font-variant-numeric: tabular-nums; }
 .tc.k0 { background: #a855c7; } .tc.k1 { background: #f4f1e8; color: #5a5446; } .tc.k2 { background: #2f6fd0; } .tc.k3 { background: #f0c628; color: #5a4300; }
@@ -431,3 +431,21 @@ div.map-choice { cursor: default; }
 .side.won { background: #fbecc0; box-shadow: inset 0 0 0 2px var(--brass); }
 .overlay { background: rgba(26, 12, 9, 0.66); }
 .pay { border-color: #6b4a2a; background: #fbf3dc; }
+
+.board-svg .tint { opacity: 0.55; stroke: none; }
+.map-thumb .tint { opacity: 0.6; }
+.board-svg .flag .pole { stroke: #4a2a14; stroke-width: 1.2; }
+.board-svg .flag .flag-edge { fill: none; stroke: #4a2a14; stroke-width: 0.6; }
+.board-svg .flag .flag-foot { fill: #f5e9c8; stroke: #4a2a14; stroke-width: 1.2; }
+.board-svg .labels text.ctry { font-style: italic; font-size: calc(10px * var(--lbl)); fill: #6b3a1a; }
+.ticket.country .tk-cities { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.tk-opts { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; font-weight: 600; }
+.tk-opt b { font-family: var(--f-display); font-size: 15px; color: #4a1a12; }
+
+.tc .train-art { width: 82%; height: auto; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.25)); }
+.tc.k1 .train-art, .tc.k3 .train-art { color: #4a3a22; }
+.tc.k1 .train-art [fill="#fff"], .tc.k3 .train-art [fill="#fff"] { fill: #fff8e6; }
+.brand-train { width: 84px; }
+.ho-train { width: 160px; }
+.pstats svg.train-art { width: 18px; height: 10px; }
+.deck-btn .tc.back .train-art { width: 76%; }

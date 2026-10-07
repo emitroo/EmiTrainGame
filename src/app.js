@@ -28,7 +28,7 @@
     lang: (navigator.language || 'en').toLowerCase().startsWith('it') ? 'it' : 'en',
     map: 'europe', n: 3, seats: seatsInit(false),
     lobby: { n: 2, map: 'europe', seats: seatsInit(true) },
-    hideHands: true, speed: 'normal', sound: true,
+    hideHands: true, speed: 'normal', sound: true, house: true,
     myName: '', knownDevs: {}, hostMode: null, room: null, lastRoom: null, turn: '',
   };
   const S = { settings: JSON.parse(JSON.stringify(DEFAULTS)), session: null, savedSession: null };
@@ -81,7 +81,9 @@
   const MAP = () => MAPS.get(cfg().map);
   const seatOf = (p) => cfg().seats[p];
   const opt = (k) => (isGuest() && S.session && S.session.opts ? S.session.opts[k] : S.settings[k]);
-  const mapRange = (id) => E.rulesOf(id).players;
+  /** Player counts: the board's official range, extended to 5 when the house rule is on. */
+  const officialRange = (id) => E.rulesOf(id).players;
+  const mapRange = (id) => { const r = officialRange(id); return S.settings.house ? [r[0], Math.max(r[1], E.rulesOf(id).maxPlayers)] : r; };
   function nameFrom(seats, p) {
     const s = seats[p];
     const nm = (s.name || '').trim();
@@ -121,16 +123,23 @@
   const colorName = (c) => (c === LOCO ? t('loco') : c < 0 ? t('gray') : t('col_' + E.COLORS[c]));
   const pdot = (p) => `<span class="pdot" style="background:${B.PLAYER_COLORS[p]}"></span>`;
 
-  // A steam locomotive: cow-catcher, boiler, chimney, dome, cab and three wheels.
-  const TRAIN_ICON = '<svg viewBox="0 0 32 20" aria-hidden="true"><g fill="currentColor"><path d="M1.5 14.5L4 11h1V8.5h14V14.5z"/><rect x="6" y="3" width="3" height="5.6" rx=".6"/><rect x="5.2" y="2.2" width="4.6" height="1.6" rx=".6"/><circle cx="13" cy="8.2" r="1.8"/><path d="M19 3.5h9.5v11H19z"/><rect x="18" y="2.2" width="11.5" height="1.8" rx=".5"/><circle cx="7.5" cy="16.2" r="2.3"/><circle cx="14" cy="16.2" r="2.3"/><circle cx="24" cy="15.6" r="3"/></g><rect x="21" y="5.5" width="5.5" height="3.6" rx=".6" fill="#fff" opacity=".7"/></svg>';
+  const ART = window.TrainArt;
+  const TRAIN_ICON = ART.LOCO;
   const COLOR_GLYPH = ['◆', '○', '▲', '★', '●', '■', '♥', '♣', '∞'];
   /** A train card. size: '' | 'sm' | 'xs' */
   function cardHTML(c, count, size, extra) {
     const cls = c === LOCO ? 'loco' : c < 0 ? 'none' : 'k' + c;
     const n = count != null ? `<b class="cnt">${count}</b>` : '';
-    return `<span class="tc ${cls} ${size || ''}" title="${esc(c >= 0 ? colorName(c) : '')}"${extra || ''}>${c >= 0 ? TRAIN_ICON + `<i class="glyph">${COLOR_GLYPH[c]}</i>` : ''}${n}</span>`;
+    return `<span class="tc ${cls} ${size || ''}" title="${esc(c >= 0 ? colorName(c) : '')}"${extra || ''}>${c >= 0 ? ART.icon(c) + `<i class="glyph">${COLOR_GLYPH[c]}</i>` : ''}${n}</span>`;
   }
-  const payHTML = (o, len) => (o.c >= 0 && len - o.l > 0 ? cardHTML(o.c, len - o.l, 'sm') : '') + (o.l ? cardHTML(LOCO, o.l, 'sm') : '');
+  /** A payment (cards array): one card chip per colour used, locomotives last. */
+  const payHTML = (cards) => [0, 1, 2, 3, 4, 5, 6, 7, LOCO].filter((k) => cards[k] > 0).map((k) => cardHTML(k, cards[k], 'sm')).join('');
+  /** Cities a ticket involves (a country ticket: its start and every border crossing it can end at). */
+  function ticketCities(tk) {
+    const m = MAP();
+    if (!E.isCountryTicket(tk)) return [tk[0], tk[1]];
+    return E.nodesOf(m, tk.f).concat(...tk.o.map(([c]) => E.nodesOf(m, -(c + 1))));
+  }
 
   const ICON = {
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
@@ -257,8 +266,8 @@
   }
 
   function mapPanel(mapId, canChange) {
-    const m = MAPS.get(mapId), [lo, hi] = mapRange(mapId);
-    const inner = `${B.thumb(m)}<span class="map-meta"><strong>${esc(m.name)}</strong><span>${esc(t('blurb_' + m.id) !== 'blurb_' + m.id ? t('blurb_' + m.id) : m.blurb)}</span><span class="map-players">${t('players_range', { a: lo, b: hi })}</span>${canChange ? `<em>${t('change')}</em>` : ''}</span>`;
+    const m = MAPS.get(mapId), [lo, hi] = officialRange(mapId), house = mapRange(mapId)[1] > hi;
+    const inner = `${B.thumb(m)}<span class="map-meta"><strong>${esc(m.name)}</strong><span>${esc(t('blurb_' + m.id) !== 'blurb_' + m.id ? t('blurb_' + m.id) : m.blurb)}</span><span class="map-players">${t('players_range', { a: lo, b: hi })}${house ? ' · ' + t('house_to', { n: mapRange(mapId)[1] }) : ''}</span>${canChange ? `<em>${t('change')}</em>` : ''}</span>`;
     return `<div class="panel"><div class="panel-head"><h2>${t('map')}</h2></div>
       ${canChange ? `<button class="map-choice" data-act="maps">${inner}</button>` : `<div class="map-choice">${inner}</div>`}</div>`;
   }
@@ -266,6 +275,7 @@
   function optionsPanel(local) {
     return `<div class="panel"><h2>${t('options')}</h2>
       ${local ? `<div class="opt"><label for="o-hide">${t('opt_hide')}</label>${sw('o-hide', 'hideHands')}<p class="hint">${t('opt_hide_d')}</p></div>` : ''}
+      ${isGuest() ? '' : `<div class="opt"><label for="o-house">${t('opt_house')}</label>${sw('o-house', 'house')}<p class="hint">${t('opt_house_d')}</p></div>`}
       <div class="opt"><span class="lbl">${t('opt_speed')}</span>${seg('speed', [['slow', t('slow')], ['normal', t('normal')], ['fast', t('fast')]], S.settings.speed)}</div>
       <div class="opt"><label for="o-sound">${t('opt_sound')}</label>${sw('o-sound', 'sound')}</div>
       <div class="opt"><span class="lbl">${t('lang')}</span>${langSeg()}</div>
@@ -541,7 +551,7 @@
     const g = S.session && S.session.G;
     switch (sh.type) {
       case 'rules': body = head(t('rules')) + rulesHTML(); break;
-      case 'maps': body = head(t('choose_map')) + `<div class="map-grid">${MAPS.list.map((id) => { const m = MAPS.get(id), [lo, hi] = mapRange(id); return `<button class="map-tile" data-act="pick-map" data-v="${id}" aria-pressed="${id === src().map}">${B.thumb(m)}<strong>${esc(m.name)}</strong><span>${esc(t('blurb_' + id) !== 'blurb_' + id ? t('blurb_' + id) : m.blurb)}</span><span class="map-players">${t('players_range', { a: lo, b: hi })}</span></button>`; }).join('')}</div>`; break;
+      case 'maps': body = head(t('choose_map')) + `<div class="map-grid">${MAPS.list.map((id) => { const m = MAPS.get(id), [lo, hi] = officialRange(id); return `<button class="map-tile" data-act="pick-map" data-v="${id}" aria-pressed="${id === src().map}">${B.thumb(m)}<strong>${esc(m.name)}</strong><span>${esc(t('blurb_' + id) !== 'blurb_' + id ? t('blurb_' + id) : m.blurb)}</span><span class="map-players">${t('players_range', { a: lo, b: hi })}</span></button>`; }).join('')}</div>`; break;
       case 'menu': body = menuHTML(head); break;
       case 'phones': body = head(t('phones')) + phonesHTML(); break;
       case 'confirm': body = `<p class="confirm-text">${t(sh.text)}</p><div class="btn-row"><button class="btn btn-ghost" data-act="close">${t('cancel')}</button><button class="btn btn-primary" data-act="${sh.act}">${t(sh.yes)}</button></div>`; break;
@@ -579,6 +589,11 @@
   function ticketRow(id, opts) {
     const m = MAP(), tk = m.tickets[id];
     const done = opts && opts.done;
+    if (E.isCountryTicket(tk)) {
+      const from = tk.f >= 0 ? m.cities[tk.f].name : m.countries[-tk.f - 1].name;
+      const to = tk.o.map(([c, pts]) => `<span class="tk-opt">${esc(m.countries[c].name)} <b>${pts}</b></span>`).join('');
+      return `<span class="ticket country${done ? ' done' : ''}"><span class="tk-cities">${esc(from)} <i>→</i> <span class="tk-opts">${to}</span></span>${done ? `<span class="tk-ok">${ICON.check}</span>` : ''}</span>`;
+    }
     return `<span class="ticket${tk[3] ? ' long' : ''}${done ? ' done' : ''}"><span class="tk-cities">${esc(m.cities[tk[0]].name)} <i>→</i> ${esc(m.cities[tk[1]].name)}</span><b class="tk-pts">${tk[2]}</b>${done ? `<span class="tk-ok">${ICON.check}</span>` : ''}</span>`;
   }
 
@@ -614,10 +629,11 @@
       else if (!myTurn() || g.step || g.offer[v]) body += `<p class="hint">${t('not_now')}</p>`;
       else if (!opts.length) body += `<p class="hint">${t('need_cards', { n: rt.len, col: colorName(rt.color) })}${rt.ferry ? ' ' + t('need_ferry', { n: rt.ferry }) : ''}</p>`;
       else {
-        body += `<p class="hint">${t(rt.tunnel ? 'pay_tunnel' : 'pay_with')}</p><div class="pay-opts">${opts.map((x) => `<button class="pay" data-act="claim" data-r="${r}" data-c="${x.c}" data-l="${x.l}">${payHTML(x, rt.len)}</button>`).join('')}</div>`;
+        ui.payOpts = opts;
+        body += `<p class="hint">${t(rt.tunnel ? 'pay_tunnel' : 'pay_with')}</p><div class="pay-opts">${opts.map((x, i) => `<button class="pay" data-act="claim" data-r="${r}" data-i="${i}" data-cards="${x.join(',')}">${payHTML(x)}</button>`).join('')}</div>`;
       }
     }
-    const myT = v >= 0 ? (g.tickets[v] || []).filter((id) => id >= 0 && [m.tickets[id][0], m.tickets[id][1]].some((c) => c === rt.a || c === rt.b)) : [];
+    const myT = v >= 0 ? (g.tickets[v] || []).filter((id) => id >= 0 && ticketCities(m.tickets[id]).some((c) => c === rt.a || c === rt.b)) : [];
     if (myT.length) body += `<div class="ticket-list small">${myT.map((id) => ticketRow(id, { done: E.ticketDone(g, v, id) })).join('')}</div>`;
     return head(esc(routeName(r))) + body;
   }
@@ -636,24 +652,22 @@
         if (why) body += `<p class="hint">${esc(t('why_' + why))}</p>`;
         else if (!myTurn() || g.step || g.offer[v]) body += `<p class="hint">${t('station_cost', { n: cost })} ${t('not_now')}</p>`;
         else if (!opts.length) body += `<p class="hint">${t('station_cost', { n: cost })} ${t('need_station_cards')}</p>`;
-        else body += `<p class="hint">${t('station_cost', { n: cost })}</p><div class="pay-opts">${opts.map((x) => `<button class="pay" data-act="station" data-city="${c}" data-c="${x.c}" data-l="${x.l}">${ICON.station}${payHTML(x, cost)}</button>`).join('')}</div>`;
+        else body += `<p class="hint">${t('station_cost', { n: cost })}</p><div class="pay-opts">${opts.map((x) => `<button class="pay" data-act="station" data-city="${c}" data-cards="${x.join(',')}">${ICON.station}${payHTML(x)}</button>`).join('')}</div>`;
       }
     }
     const routes = m.routes.map((rt, r) => ((rt.a === c || rt.b === c) ? r : -1)).filter((r) => r >= 0);
     body += `<div class="city-routes">${routes.map((r) => { const rt = m.routes[r], o = g.owner[r]; return `<button class="city-route" data-act="pick-route" data-v="${r}">${o >= 0 ? pdot(o) : cardHTML(rt.color < 0 ? -1 : rt.color, null, 'xs')}<span>${esc(cityName(rt.a === c ? rt.b : rt.a))}</span><small>${rt.len}${rt.tunnel ? ' · ' + t('tunnel') : ''}${rt.ferry ? ' · ' + t('ferry') : ''}</small></button>`; }).join('')}</div>`;
-    const myT = v >= 0 ? (g.tickets[v] || []).filter((id) => id >= 0 && (m.tickets[id][0] === c || m.tickets[id][1] === c)) : [];
+    const myT = v >= 0 ? (g.tickets[v] || []).filter((id) => id >= 0 && ticketCities(m.tickets[id]).includes(c)) : [];
     if (myT.length) body += `<div class="ticket-list small">${myT.map((id) => ticketRow(id, { done: E.ticketDone(g, v, id) })).join('')}</div>`;
     return head(esc(cityName(c))) + body;
   }
 
   function tunnelSheet(head) {
-    const g = G(), v = viewerSeat(), T = g.step.tunnel, h = g.hands[v];
-    const opts = [];
-    if (T.c < 0) { if (h[LOCO] >= T.extra) opts.push({ c: -1, l: T.extra }); }
-    else for (let l = Math.max(0, T.extra - h[T.c]); l <= Math.min(T.extra, h[LOCO]); l++) opts.push({ c: T.c, l });
+    const g = G(), v = viewerSeat(), T = g.step.tunnel;
+    const opts = E.tunnelOptions(g, v);
     return head(t('tunnel_t', { route: esc(routeName(T.r)) })) + `<div class="reveal">${T.rev.map((c) => cardHTML(c)).join('')}</div>
       <p class="confirm-text">${t(T.c < 0 ? 'tunnel_need_loco' : 'tunnel_need', { n: T.extra, col: colorName(T.c) })}</p>
-      ${opts.length ? `<div class="pay-opts">${opts.map((x) => `<button class="pay" data-act="tunnel-pay" data-l="${x.l}">${payHTML(x, T.extra)}</button>`).join('')}</div>` : `<p class="hint">${t('tunnel_cant')}</p>`}
+      ${opts.length ? `<div class="pay-opts">${opts.map((x) => `<button class="pay" data-act="tunnel-pay" data-cards="${x.join(',')}">${payHTML(x)}</button>`).join('')}</div>` : `<p class="hint">${t('tunnel_cant')}</p>`}
       <div class="btn-row"><button class="btn btn-ghost" data-act="peek">${t('look_map')}</button><button class="btn btn-ink" data-act="tunnel-no">${t('tunnel_give_up')}</button></div>`;
   }
 
@@ -677,7 +691,9 @@
     const actions = isGuest()
       ? `<p class="pair-status">${esc(t('wait_host', { name: net.guest.hostName || t('host_tag') }))}</p><button class="btn btn-ghost" data-act="ask-leave">${t('leave')}</button>`
       : `<div class="btn-row"><button class="btn btn-ghost" data-act="quit">${t('to_setup')}</button><button class="btn btn-primary" data-act="new-game">${t('play_again')}</button></div>`;
-    return `<div class="result-banner"><span class="kicker">${esc(m.name)} · ${t('game_over')}</span><h2>${esc(t(F.winners.length > 1 ? 'tie' : 'wins', { name: win }))}</h2></div>
+    const top = Math.max(...F.rows.map((r) => r.total));
+    const broken = F.winners.length === 1 && F.rows.filter((r) => r.total === top).length > 1;
+    return `<div class="result-banner"><span class="kicker">${esc(m.name)} · ${t('game_over')}</span><h2>${esc(t(F.winners.length > 1 ? 'tie' : 'wins', { name: win }))}</h2>${broken ? `<p class="hint">${esc(t('r_tie_' + E.rulesOf(g).tie.join('_')))}</p>` : ''}</div>
       <div class="sides">${rows}</div>
       <button class="btn btn-ghost" data-act="peek">${t('look_map')}</button>${actions}`;
   }
@@ -711,6 +727,14 @@
     const id = S.session && S.session.G ? S.session.cfg.map : src().map;
     const m = MAPS.get(id), R = E.rulesOf(id);
     const special = [];
+    if (R.locoUse === 'tunnelFerry') special.push(t('r_loco_tf'));
+    if (R.locoUse === 'tunnel') special.push(t('r_loco_t'));
+    if (R.locoDrawFree) special.push(t('r_loco_draw'));
+    if (R.ferrySub) special.push(t('r_ferry_sub', { n: R.ferrySub }));
+    if (m.routes.some((r) => r.sub)) special.push(t('r_sub', { n: m.routes.find((r) => r.sub).sub }));
+    if (m.countries && m.countries.length) special.push(t('r_countries'));
+    if (R.ticketReturn === 'box') special.push(t('r_return_box'));
+    special.push(t('r_players', { a: R.players[0], b: R.players[1], trains: R.trains }));
     if (R.stations) special.push(t('r_stations', { n: R.stations, pts: R.stationPoints }));
     if (m.routes.some((r) => r.tunnel)) special.push(t('r_tunnels'));
     if (m.routes.some((r) => r.ferry)) special.push(t('r_ferries'));
@@ -718,6 +742,7 @@
     if (R.bonus.includes('longest')) special.push(t('r_longest', { pts: R.bonusPoints }));
     if (R.bonus.includes('globetrotter')) special.push(t('r_globe', { pts: R.bonusPoints }));
     if (R.bonus.includes('mandala')) special.push(t('r_mandala'));
+    special.push(t('r_tie_' + R.tie.join('_')));
     const deal = R.deal.long ? t('r_deal_long', { long: R.deal.long, short: R.deal.short, keep: R.deal.keep }) : t('r_deal', { n: R.deal.short, keep: R.deal.keep });
     return t('rules_html', { trains: R.trains, deal, end: R.endAt })
       + `<h3>${esc(m.name)}</h3><ul>${special.map((x) => `<li>${x}</li>`).join('')}</ul>`
@@ -752,7 +777,7 @@
     }
     ui.error = '';
     stopFlow();
-    S.session = { cfg: { n, map, seats }, G: E.newGame({ map, n }) };
+    S.session = { cfg: { n, map, seats }, G: E.newGame({ map, n, house: S.settings.house }) };
     ui.viewer = -1; ui.handoff = null; ui.sheet = null; ui.peek = false; ui.sel = null; ui.selCities = []; ui.toast = null; ui.keep = null;
     ui.lastSeq = S.session.G.seq;
     persist();
@@ -1417,13 +1442,13 @@
   }
 
   function showTicketOnMap(id) {
-    const tk = MAP().tickets[id];
-    ui.selCities = [tk[0], tk[1]];
+    const cs = ticketCities(MAP().tickets[id]);
+    ui.selCities = cs;
     ui.sel = null;
     if (ui.sheet && (ui.sheet.type === 'offer' || ui.sheet.type === 'tunnel')) ui.peek = true;
     else ui.sheet = null;
     render();
-    if (ui.board) ui.board.focus([tk[0], tk[1]]);
+    if (ui.board) ui.board.focus(cs);
   }
 
   document.addEventListener('click', (ev) => {
@@ -1471,9 +1496,9 @@
       case 'zoom-fit': if (ui.board) ui.board.fit(); return;
       case 'take': act({ k: 'card', slot: +v }); return;
       case 'draw-tickets': act({ k: 'tickets' }); return;
-      case 'claim': act({ k: 'claim', r: +el.dataset.r, c: +el.dataset.c, l: +el.dataset.l }); return;
-      case 'station': act({ k: 'station', city: +el.dataset.city, c: +el.dataset.c, l: +el.dataset.l }); return;
-      case 'tunnel-pay': act({ k: 'tunnel', pay: true, l: +el.dataset.l }); return;
+      case 'claim': act({ k: 'claim', r: +el.dataset.r, cards: el.dataset.cards.split(',').map(Number) }); return;
+      case 'station': act({ k: 'station', city: +el.dataset.city, cards: el.dataset.cards.split(',').map(Number) }); return;
+      case 'tunnel-pay': act({ k: 'tunnel', pay: true, cards: el.dataset.cards.split(',').map(Number) }); return;
       case 'tunnel-no': act({ k: 'tunnel', pay: false }); return;
       case 'pick-route': ui.sel = +v; ui.selCities = []; ui.sheet = { type: 'route', r: +v }; render(); return;
       case 'keep-toggle': {
@@ -1544,7 +1569,15 @@
   });
   document.addEventListener('change', (ev) => {
     const el = ev.target;
-    if (el.dataset.set) { S.settings[el.dataset.set] = el.checked; persist(); broadcastLobby(); }
+    if (el.dataset.set) {
+      S.settings[el.dataset.set] = el.checked;
+      if (el.dataset.set === 'house') {
+        // Turning the house rule off brings the player count back inside the board's official range.
+        for (const c of [S.settings, S.settings.lobby]) { const [lo, hi] = mapRange(c.map); c.n = Math.max(lo, Math.min(hi, c.n)); }
+        renderSetup();
+      }
+      persist(); broadcastLobby();
+    }
     else if (el.dataset.level != null) { src().seats[+el.dataset.level].level = el.value; persist(); }
     else if (el.dataset.dev != null) { const s = src().seats[+el.dataset.dev]; s.remote = el.value || null; s.open = true; persist(); renderSetup(); }
     else if (el.dataset.name != null) broadcastLobby();
@@ -1574,7 +1607,7 @@
       S.settings.seats.forEach((s) => { s.remote = null; s.open = false; });
       if (!fix(S.settings.lobby, true)) S.settings.lobby = JSON.parse(JSON.stringify(DEFAULTS.lobby));
       if (!S.settings.knownDevs) S.settings.knownDevs = {};
-      if (saved.session && saved.session.G && saved.session.G.v === 1 && MAPS.get(saved.session.G.map)) S.session = saved.session;
+      if (saved.session && saved.session.G && saved.session.G.v === 2 && MAPS.get(saved.session.G.map)) S.session = saved.session;
     }
     if (!N) S.settings.hostMode = null;
     ui.screen = S.settings.hostMode ? 'host' : 'home';

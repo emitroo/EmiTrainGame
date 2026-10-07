@@ -1,133 +1,164 @@
-// North America: the classic coast-to-coast race. No tunnels, ferries or stations; the longest route matters.
+// USA: the original board's 36 cities, 100 routes (78 connections) and 30 destination tickets, with the base rules:
+// 2-5 players, 45 trains, double routes open with 4-5 players, 3 tickets dealt (keep 2), longest path +10.
+// Sources: route data from github.com/Rob217/TicketToRideAnalysis and the ticket list from the Ticket to Ride wiki,
+// each route colour checked against a photo of the board. Cities sit at their real positions.
 export default {
   id: 'usa',
-  name: 'North America',
-  blurb: 'The classic: coast to coast, long routes score big.',
-  rules: { trains: 45, players: [2, 5], doubleMin: 4, deal: { short: 3, keep: 2 }, bonus: ['longest'] },
+  name: 'USA',
+  blurb: 'The original board: coast to coast for 2–5 players, long routes score big.',
+  rules: { trains: 45, players: [2, 5], doubleMin: 4, deal: { short: 3, keep: 2 }, bonus: ['longest'], tie: ['tickets', 'longest'] },
   bbox: [-127, 23.5, -66, 53.5],
   kmPerTrain: 205,
   cities: {
-    van: ['Vancouver', -123.12, 49.28],
-    sea: ['Seattle', -122.33, 47.61],
-    por: ['Portland', -122.68, 45.52],
-    sfo: ['San Francisco', -122.42, 37.77],
-    lax: ['Los Angeles', -118.24, 34.05],
-    sdg: ['San Diego', -117.16, 32.72],
-    lvg: ['Las Vegas', -115.14, 36.17],
-    phx: ['Phoenix', -112.07, 33.45],
-    boi: ['Boise', -116.2, 43.62],
-    slc: ['Salt Lake City', -111.89, 40.76],
-    hel: ['Helena', -112.04, 46.59],
-    cal: ['Calgary', -114.07, 51.05],
-    win: ['Winnipeg', -97.14, 49.9],
-    bil: ['Billings', -108.5, 45.78],
-    den: ['Denver', -104.99, 39.74],
-    abq: ['Albuquerque', -106.65, 35.08],
-    elp: ['El Paso', -106.49, 31.76],
-    sat: ['San Antonio', -98.49, 29.42],
-    hou: ['Houston', -95.37, 29.76],
-    dal: ['Dallas', -96.8, 32.78],
-    okc: ['Oklahoma City', -97.52, 35.47],
-    kc: ['Kansas City', -94.58, 39.1],
-    oma: ['Omaha', -95.93, 41.26],
-    msp: ['Minneapolis', -93.27, 44.98],
-    chi: ['Chicago', -87.63, 41.88],
-    stl: ['Saint Louis', -90.2, 38.63],
-    mem: ['Memphis', -90.05, 35.15],
-    nor: ['New Orleans', -90.07, 29.95],
-    nas: ['Nashville', -86.78, 36.16],
-    atl: ['Atlanta', -84.39, 33.75],
-    jax: ['Jacksonville', -81.66, 30.33],
-    mia: ['Miami', -80.19, 25.76],
-    cha: ['Charleston', -79.93, 32.78],
-    ral: ['Raleigh', -78.64, 35.78],
-    was: ['Washington', -77.04, 38.91],
-    pit: ['Pittsburgh', -79.99, 40.44],
-    det: ['Detroit', -83.05, 42.33],
-    tor: ['Toronto', -79.38, 43.65],
-    mtl: ['Montréal', -73.57, 45.5],
-    bos: ['Boston', -71.06, 42.36],
-    nyc: ['New York', -74.01, 40.71],
+    vancouver: ["Vancouver", -123.12, 49.28],
+    seattle: ["Seattle", -122.33, 47.61],
+    portland: ["Portland", -122.68, 45.52],
+    sanfrancisco: ["San Francisco", -122.42, 37.77],
+    losangeles: ["Los Angeles", -118.24, 34.05],
+    lasvegas: ["Las Vegas", -115.14, 36.17],
+    phoenix: ["Phoenix", -112.07, 33.45],
+    saltlakecity: ["Salt Lake City", -111.89, 40.76],
+    helena: ["Helena", -112.04, 46.59],
+    calgary: ["Calgary", -114.07, 51.05],
+    winnipeg: ["Winnipeg", -97.14, 49.9],
+    denver: ["Denver", -104.99, 39.74],
+    santafe: ["Santa Fe", -105.94, 35.69],
+    elpaso: ["El Paso", -106.49, 31.76],
+    oklahomacity: ["Oklahoma City", -97.52, 35.47],
+    kansascity: ["Kansas City", -94.58, 39.1],
+    omaha: ["Omaha", -95.93, 41.26],
+    duluth: ["Duluth", -92.1, 46.79],
+    saultstmarie: ["Sault St. Marie", -84.35, 46.5],
+    chicago: ["Chicago", -87.63, 41.88],
+    saintlouis: ["Saint Louis", -90.2, 38.63],
+    littlerock: ["Little Rock", -92.29, 34.75],
+    dallas: ["Dallas", -96.8, 32.78],
+    houston: ["Houston", -95.37, 29.76],
+    neworleans: ["New Orleans", -90.07, 29.95],
+    nashville: ["Nashville", -86.78, 36.16],
+    atlanta: ["Atlanta", -84.39, 33.75],
+    charleston: ["Charleston", -79.93, 32.78],
+    miami: ["Miami", -80.19, 25.76],
+    raleigh: ["Raleigh", -78.64, 35.78],
+    washington: ["Washington", -77.04, 38.91],
+    pittsburgh: ["Pittsburgh", -79.99, 40.44],
+    newyork: ["New York", -74.01, 40.71],
+    boston: ["Boston", -71.06, 42.36],
+    montreal: ["Montréal", -73.57, 45.5],
+    toronto: ["Toronto", -79.38, 43.65],
   },
   routes: `
-    van sea 1 g x2
-    van cal 3
-    sea cal 4
-    sea hel 6
-    sea por 1 g x2
-    por boi 4
-    por sfo 5 x2
-    sfo lax 3 x2
-    sfo slc 5 x2
-    lax sdg 1 g
-    lax lvg 2
-    lax phx 3
-    sdg phx 3
-    lvg slc 3
-    lvg phx 2
-    phx abq 3
-    phx elp 3
-    abq den 3
-    abq elp 2
-    abq okc 4
-    elp sat 4
-    elp dal 4
-    sat hou 2
-    sat dal 2
-    hou dal 1 g x2
-    hou nor 2
-    dal okc 2 x2
-    dal mem 4
-    okc kc 2 x2
-    okc den 4
-    den kc 4 x2
-    den oma 4
-    den slc 3 x2
-    den bil 4
-    slc boi 2
-    boi hel 3
-    hel bil 2
-    hel cal 3
-    cal win 6
-    bil win 5
-    bil msp 5
-    win msp 3
-    oma msp 2 x2
-    msp chi 3
-    msp tor 6
-    oma chi 3
-    oma kc 1 g x2
-    kc stl 2 x2
-    stl chi 2 x2
-    stl mem 2
-    stl nas 2
-    mem nas 1
-    mem nor 3
-    nor atl 4 x2
-    nor jax 4
-    jax mia 3
-    jax atl 2
-    jax cha 2
-    cha atl 2
-    cha ral 2
-    atl ral 2 x2
-    atl nas 1
-    nas pit 4
-    nas ral 3
-    pit was 2
-    was ral 2 x2
-    was nyc 2 x2
-    nyc pit 2 x2
-    nyc bos 2 x2
-    bos mtl 2 x2
-    mtl nyc 3
-    mtl tor 3
-    tor det 2
-    det chi 2
-    det pit 2
-    tor pit 2
-    chi pit 3
-    mia nor 6 b-55
+    vancouver calgary 3 gray
+    vancouver seattle 1 gray/gray x2
+    seattle calgary 4 gray
+    seattle helena 6 yellow
+    seattle portland 1 gray/gray x2
+    portland saltlakecity 6 blue
+    portland sanfrancisco 5 green/purple x2
+    sanfrancisco saltlakecity 5 orange/white x2
+    sanfrancisco losangeles 3 yellow/purple x2
+    losangeles lasvegas 2 gray
+    losangeles phoenix 3 gray
+    losangeles elpaso 6 black
+    calgary winnipeg 6 white
+    calgary helena 4 gray
+    helena winnipeg 4 blue
+    helena saltlakecity 3 purple
+    helena denver 4 green
+    helena duluth 6 orange
+    helena omaha 5 red
+    saltlakecity denver 3 red/yellow x2
+    lasvegas saltlakecity 3 orange
+    phoenix denver 5 white
+    phoenix santafe 3 gray
+    phoenix elpaso 3 gray
+    winnipeg saultstmarie 6 gray
+    winnipeg duluth 4 black
+    duluth saultstmarie 3 gray
+    duluth toronto 6 purple
+    duluth chicago 3 red
+    duluth omaha 2 gray/gray x2
+    omaha chicago 4 blue
+    omaha kansascity 1 gray/gray x2
+    kansascity saintlouis 2 blue/purple x2
+    kansascity oklahomacity 2 gray/gray x2
+    oklahomacity littlerock 2 gray
+    oklahomacity dallas 2 gray/gray x2
+    dallas littlerock 2 gray
+    dallas houston 1 gray/gray x2
+    houston neworleans 2 gray
+    elpaso houston 6 green
+    elpaso dallas 4 red
+    elpaso oklahomacity 5 yellow
+    elpaso santafe 2 gray
+    santafe oklahomacity 3 blue
+    oklahomacity denver 4 red
+    santafe denver 2 gray
+    denver kansascity 4 black/orange x2
+    denver omaha 4 purple
+    neworleans miami 6 red
+    neworleans atlanta 4 orange/yellow x2
+    neworleans littlerock 3 green
+    littlerock nashville 3 white
+    littlerock saintlouis 2 gray
+    saintlouis nashville 2 gray
+    saintlouis pittsburgh 5 green
+    saintlouis chicago 2 green/white x2
+    chicago pittsburgh 3 black/orange x2
+    chicago toronto 4 white
+    saultstmarie montreal 5 black
+    toronto montreal 3 gray
+    saultstmarie toronto 2 gray
+    toronto pittsburgh 2 gray
+    pittsburgh newyork 2 white/green x2
+    pittsburgh washington 2 gray
+    pittsburgh raleigh 2 gray
+    nashville raleigh 3 black
+    nashville atlanta 1 gray
+    nashville pittsburgh 4 yellow
+    atlanta miami 5 blue
+    atlanta charleston 2 gray
+    atlanta raleigh 2 gray/gray x2
+    charleston miami 4 purple
+    raleigh charleston 2 gray
+    raleigh washington 2 gray/gray x2
+    washington newyork 2 orange/black x2
+    newyork boston 2 yellow/red x2
+    newyork montreal 3 blue
+    boston montreal 2 gray/gray x2
   `,
-  tickets: { bands: [[12, 5, 9], [10, 9, 14], [8, 14, 22]] },
+  tickets: {
+    list: [
+      ["boston", "miami", 12],
+      ["calgary", "phoenix", 13],
+      ["calgary", "saltlakecity", 7],
+      ["chicago", "neworleans", 7],
+      ["chicago", "santafe", 9],
+      ["dallas", "newyork", 11],
+      ["denver", "elpaso", 4],
+      ["denver", "pittsburgh", 11],
+      ["duluth", "elpaso", 10],
+      ["duluth", "houston", 8],
+      ["helena", "losangeles", 8],
+      ["kansascity", "houston", 5],
+      ["losangeles", "chicago", 16],
+      ["losangeles", "miami", 20],
+      ["losangeles", "newyork", 21],
+      ["montreal", "atlanta", 9],
+      ["montreal", "neworleans", 13],
+      ["newyork", "atlanta", 6],
+      ["portland", "nashville", 17],
+      ["portland", "phoenix", 11],
+      ["sanfrancisco", "atlanta", 17],
+      ["saultstmarie", "nashville", 8],
+      ["saultstmarie", "oklahomacity", 9],
+      ["seattle", "losangeles", 9],
+      ["seattle", "newyork", 22],
+      ["toronto", "miami", 10],
+      ["vancouver", "montreal", 20],
+      ["vancouver", "santafe", 13],
+      ["winnipeg", "houston", 12],
+      ["winnipeg", "littlerock", 11],
+    ],
+  },
 };

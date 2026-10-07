@@ -105,12 +105,12 @@ async function uiStep(p, level) {
   else if (a.k === 'tickets') await p.click('#tray [data-act=draw-tickets]');
   else if (a.k === 'claim') {
     await p.evaluate((r) => window.__emitrain.ui.board.handlers.route(r), a.r);
-    await p.click(`.pay[data-act=claim][data-c="${a.c}"][data-l="${a.l}"]`);
+    await p.click(`.pay[data-act=claim][data-cards="${a.cards.join(',')}"]`);
   } else if (a.k === 'station') {
     await p.evaluate((c) => window.__emitrain.ui.board.handlers.city(c), a.city);
-    await p.click(`.pay[data-act=station][data-c="${a.c}"][data-l="${a.l}"]`);
+    await p.click(`.pay[data-act=station][data-cards="${a.cards.join(',')}"]`);
   } else if (a.k === 'tunnel') {
-    if (a.pay) await p.click('.pay[data-act=tunnel-pay]'); else await p.click('[data-act=tunnel-no]');
+    if (a.pay) await p.click(`.pay[data-act=tunnel-pay][data-cards="${a.cards.join(',')}"]`); else await p.click('[data-act=tunnel-no]');
   } else if (a.k === 'pass') {
     await p.evaluate(() => { const T = window.__emitrain; T.E.apply(T.S.session.G, T.ui.viewer, { k: 'pass' }); });
   }

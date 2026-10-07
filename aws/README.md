@@ -1,4 +1,6 @@
-# Emi Train Game on AWS (optional, private hosting)
+# Emi Train Game on AWS (later, optional)
+
+> Not needed now: the game is hosted on GitHub Pages. This folder is a ready setup for when a private copy is wanted.
 
 GitHub Pages is the primary home. This folder adds a second, private copy on AWS, in two independent modules, so
 each can be adopted when needed.

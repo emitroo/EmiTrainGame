@@ -28,7 +28,7 @@ const MIN_CITY_DIST = 30;
 
 // ---------- Natural Earth ----------
 const NE = new URL('.cache/ne/', ROOT);
-const NE_FILES = ['ne_50m_land', 'ne_50m_lakes', 'ne_50m_admin_0_boundary_lines_land'];
+const NE_FILES = ['ne_50m_land', 'ne_50m_lakes', 'ne_50m_admin_0_boundary_lines_land', 'ne_50m_admin_0_countries'];
 function ensureNe() {
   mkdirSync(NE, { recursive: true });
   for (const f of NE_FILES) {
@@ -38,7 +38,7 @@ function ensureNe() {
     execFileSync('curl', ['-sSfL', '-o', p.pathname, `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/${f}.geojson`]);
   }
   const load = (f) => JSON.parse(readFileSync(new URL(f + '.geojson', NE), 'utf8')).features;
-  return { land: load(NE_FILES[0]), lakes: load(NE_FILES[1]), borders: load(NE_FILES[2]) };
+  return { land: load(NE_FILES[0]), lakes: load(NE_FILES[1]), borders: load(NE_FILES[2]), countries: load(NE_FILES[3]) };
 }
 
 // ---------- geometry helpers ----------
@@ -51,11 +51,66 @@ function km(a, b) {
 }
 const r1 = (v) => Math.round(v * 10) / 10;
 
+// Geographic layout: Mercator, fitted to the board width. src() gives source coordinates (lon, Mercator y),
+// fromSrc() turns them into board units, so geography can be clipped in source space before it is placed.
 function makeProjection(bbox) {
   const [lon0, lat0, lon1, lat1] = bbox;
   const y0 = mercY(lat1), y1 = mercY(lat0);
   const s = W / (lon1 - lon0);
-  return { s, h: Math.round((y0 - y1) * s), p: (lon, lat) => [(lon - lon0) * s, (y0 - mercY(lat)) * s] };
+  const fromSrc = ([sx, sy]) => [(sx - lon0) * s, (y0 - sy) * s];
+  return { s, h: Math.round((y0 - y1) * s), src: (lon, lat) => [lon, mercY(lat)], fromSrc, p: (lon, lat) => fromSrc([lon, mercY(lat)]) };
+}
+
+// Board layout: cities sit where the published board puts them (x, y in %), and the geography is bent to match
+// with a thin-plate spline fitted on the cities' real positions, plus a few far anchors so it stays calm at the edges.
+function solve(A, b) {
+  const n = b.length, M = A.map((row, i) => row.concat([b[i]]));
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c || !M[r][c]) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+function thinPlate(src, dst, lambda) {
+  const n = src.length, U = (r2) => (r2 > 0 ? r2 * Math.log(r2) / 2 : 0);
+  const A = [];
+  for (let i = 0; i < n; i++) {
+    const row = [];
+    for (let j = 0; j < n; j++) row.push(U((src[i][0] - src[j][0]) ** 2 + (src[i][1] - src[j][1]) ** 2) + (i === j ? lambda : 0));
+    row.push(1, src[i][0], src[i][1]);
+    A.push(row);
+  }
+  for (let k = 0; k < 3; k++) A.push(src.map((p) => [1, p[0], p[1]][k]).concat([0, 0, 0]));
+  const wx = solve(A, dst.map((d) => d[0]).concat([0, 0, 0])), wy = solve(A, dst.map((d) => d[1]).concat([0, 0, 0]));
+  return ([x, y]) => {
+    let u = wx[n] + wx[n + 1] * x + wx[n + 2] * y, v = wy[n] + wy[n + 1] * x + wy[n + 2] * y;
+    for (let i = 0; i < n; i++) { const k = U((x - src[i][0]) ** 2 + (y - src[i][1]) ** 2); u += wx[i] * k; v += wy[i] * k; }
+    return [u, v];
+  };
+}
+function makeBoardProjection(spec, points) {
+  const h = Math.round(W * spec.layout.aspect);
+  const src = points.map((p) => [p.lon, mercY(p.lat)]);
+  const dst = points.map((p) => [(p.bx / 100) * W, (p.by / 100) * h]);
+  // Normalise the source so the spline is well conditioned.
+  const mx = src.reduce((a, p) => a + p[0], 0) / src.length, my = src.reduce((a, p) => a + p[1], 0) / src.length;
+  const sc = Math.sqrt(src.reduce((a, p) => a + (p[0] - mx) ** 2 + (p[1] - my) ** 2, 0) / src.length);
+  const norm = (p) => [(p[0] - mx) / sc, (p[1] - my) / sc];
+  // Least-squares affine fit, used to place anchor points far outside the cities.
+  const At = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0];
+  src.map(norm).forEach((p, i) => { const r = [1, p[0], p[1]]; for (let a = 0; a < 3; a++) { for (let b = 0; b < 3; b++) At[a][b] += r[a] * r[b]; bx[a] += r[a] * dst[i][0]; by[a] += r[a] * dst[i][1]; } });
+  const ax = solve(At, bx), ay = solve(At, by);
+  const affine = (p) => [ax[0] + ax[1] * p[0] + ax[2] * p[1], ay[0] + ay[1] * p[0] + ay[2] * p[1]];
+  const ctrl = src.map(norm), out = dst.slice();
+  for (const [ux, uy] of [[-3, -3], [0, -3], [3, -3], [-3, 0], [3, 0], [-3, 3], [0, 3], [3, 3]]) { ctrl.push([ux, uy]); out.push(affine([ux, uy])); }
+  const f = thinPlate(ctrl, out, 0.002);
+  return { h, src: (lon, lat) => [lon, mercY(lat)], fromSrc: (q) => f(norm(q)), p: (lon, lat) => f(norm([lon, mercY(lat)])) };
 }
 
 // Sutherland-Hodgman clip of a closed ring to the rectangle [x0,x1]x[y0,y1].
@@ -135,10 +190,14 @@ const ringArea = (r) => { let s = 0; for (let i = 0; i < r.length; i++) { const 
 const fmt = (v) => String(Math.round(v * 10) / 10);
 const pathOf = (rings, closed) => rings.map((r) => 'M' + r.map((p) => fmt(p[0]) + ' ' + fmt(p[1])).join('L') + (closed ? 'Z' : '')).join('');
 
-function geoLayers(ne, proj, bbox, h) {
-  const pad = 160, [x0, y0, x1, y1] = [-pad, -pad, W + pad, h + pad];
-  const [lon0, lat0, lon1, lat1] = bbox;
-  const near = (coords) => coords.some(([lon, lat]) => lon > lon0 - 40 && lon < lon1 + 40 && lat > lat0 - 25 && lat < lat1 + 25);
+function geoLayers(ne, proj, spec, h) {
+  const pad = spec.layout && spec.layout.kind === 'board' ? 30 : 240, [x0, y0, x1, y1] = [-pad, -pad, W + pad, h + pad];
+  const [lon0, lat0, lon1, lat1] = spec.bbox;
+  // Source-space window: the map's box plus a margin, so far-away geography never reaches the warp.
+  const mLon = (lon1 - lon0) * 0.6, mLat = (lat1 - lat0) * 0.6;
+  const sx0 = lon0 - mLon, sx1 = lon1 + mLon, sy0 = mercY(Math.max(-80, lat0 - mLat)), sy1 = mercY(Math.min(84, lat1 + mLat));
+  const near = (coords) => coords.some(([lon, lat]) => lon > sx0 && lon < sx1 && lat > lat0 - mLat && lat < lat1 + mLat);
+  const place = (ring) => ring.map((q) => proj.fromSrc(q));
   const polys = (features, minArea) => {
     const rings = [];
     for (const f of features) {
@@ -146,9 +205,11 @@ function geoLayers(ne, proj, bbox, h) {
       const list = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
       for (const poly of list) for (const ring of poly) {
         if (!near(ring)) continue;
-        const pr = clipRing(ring.map(([lon, lat]) => proj.p(lon, lat)), x0, y0, x1, y1);
+        const sr = clipRing(ring.map(([lon, lat]) => proj.src(lon, lat)), sx0, sy0, sx1, sy1);
+        if (sr.length < 3) continue;
+        const pr = clipRing(place(sr), x0, y0, x1, y1);
         if (pr.length < 3 || ringArea(pr) < minArea) continue;
-        const s = simplifyRing(pr, 0.7);
+        const s = simplifyRing(pr, 0.8);
         if (s.length >= 3) rings.push(s);
       }
     }
@@ -161,16 +222,21 @@ function geoLayers(ne, proj, bbox, h) {
       const list = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
       for (const l of list) {
         if (!near(l)) continue;
-        for (const part of clipLine(l.map(([lon, lat]) => proj.p(lon, lat)), x0, y0, x1, y1)) {
-          const s = simplify(part, 0.7, false);
-          if (s.length > 1) out.push(s);
+        for (const sp of clipLine(l.map(([lon, lat]) => proj.src(lon, lat)), sx0, sy0, sx1, sy1)) {
+          for (const part of clipLine(place(sp), x0, y0, x1, y1)) {
+            const s = simplify(part, 0.8, false);
+            if (s.length > 1) out.push(s);
+          }
         }
       }
     }
     return out;
   };
-  const bigLakes = ne.lakes.filter((f) => (f.properties.scalerank | 0) <= 3);
-  return { land: pathOf(polys(ne.land, 4), true), lakes: pathOf(polys(bigLakes, 20), true), borders: pathOf(lines(ne.borders), false) };
+  const lakes = spec.lakes === 'all' ? ne.lakes : ne.lakes.filter((f) => (f.properties.scalerank | 0) <= 3);
+  // Countries in pastel tints, grouped by Natural Earth's 7-colour map colouring.
+  const tints = [];
+  for (let k = 1; k <= 7; k++) tints.push(pathOf(polys(ne.countries.filter((f) => f.properties.MAPCOLOR7 === k), 6), true));
+  return { land: pathOf(polys(ne.land, 4), true), lakes: pathOf(polys(lakes, spec.lakes === 'all' ? 3 : 20), true), borders: pathOf(lines(ne.borders), false), tints };
 }
 
 // ---------- route parsing ----------
@@ -182,12 +248,13 @@ function parseRoutes(text, cityIds) {
     const tok = line.split(/\s+/);
     const [a, b] = tok;
     for (const c of [a, b]) if (!cityIds.has(c)) throw new Error(`line ${ln + 1}: unknown city ${c}`);
-    const r = { a, b, len: null, colors: [], tunnel: false, ferry: 0, double: false, bend: 0 };
+    const r = { a, b, len: null, colors: [], tunnel: false, ferry: 0, double: false, bend: 0, sub: 0 };
     for (const t of tok.slice(2)) {
       if (/^\d+$/.test(t)) r.len = +t;
       else if (t === 't') r.tunnel = true;
       else if (/^f\d$/.test(t)) r.ferry = +t.slice(1);
       else if (t === 'x2') r.double = true;
+      else if (/^s\d$/.test(t)) r.sub = +t.slice(1);
       else if (/^b[+-]\d+$/.test(t)) r.bend = +t.slice(1);
       else {
         const cs = t.split('/').map((c) => (c === 'gray' || c === 'g' ? GRAY : c === '?' ? null : COLORS.indexOf(c)));
@@ -258,22 +325,30 @@ function slotsOverlap(s, t) {
 
 // ---------- build one map ----------
 function build(spec, ne) {
-  const proj = makeProjection(spec.bbox);
+  const board = spec.layout && spec.layout.kind === 'board';
   const ids = Object.keys(spec.cities);
   const idx = new Map(ids.map((id, i) => [id, i]));
-  const cities = ids.map((id) => {
-    const [name, lon, lat, dx, dy] = spec.cities[id];
-    const [px, py] = proj.p(lon, lat);
-    const x = px + (dx || 0), y = py + (dy || 0); // optional nudge in board units, for crowded corners
-    return { id, name, lon, lat, x, y, x0: x, y0: y };
+  const countryIds = Object.keys(spec.countries || {});
+  // City entry: geographic maps [name, lon, lat, dx?, dy?] (a nudge in board units); board maps
+  // [name, lon, lat, x%, y%, country?] (country: the city is a border crossing into that country).
+  const raw = ids.map((id) => {
+    const [name, lon, lat, a, b, country] = spec.cities[id];
+    return board ? { id, name, lon, lat, bx: a, by: b, country: country ? countryIds.indexOf(country) : -1 } : { id, name, lon, lat, dx: a || 0, dy: b || 0, country: -1 };
+  });
+  const proj = board ? makeBoardProjection(spec, raw) : makeProjection(spec.bbox);
+  const cities = raw.map((c) => {
+    const [px, py] = board ? [(c.bx / 100) * W, (c.by / 100) * proj.h] : proj.p(c.lon, c.lat);
+    const x = px + (c.dx || 0), y = py + (c.dy || 0);
+    return Object.assign(c, { x, y, x0: x, y0: y });
   });
   // Push apart cities that are too close to tap or label.
+  const minDist = board ? 24 : MIN_CITY_DIST;
   for (let it = 0; it < 60; it++) {
     let moved = false;
     for (let i = 0; i < cities.length; i++) for (let j = i + 1; j < cities.length; j++) {
       const a = cities[i], b = cities[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01;
-      if (d >= MIN_CITY_DIST) continue;
-      const push = (MIN_CITY_DIST - d) / 2 + 0.1;
+      if (d >= minDist) continue;
+      const push = (minDist - d) / 2 + 0.1;
       a.x -= (dx / d) * push; a.y -= (dy / d) * push; b.x += (dx / d) * push; b.y += (dy / d) * push;
       moved = true;
     }
@@ -287,11 +362,21 @@ function build(spec, ne) {
 
   // Routes: expand doubles, lengths from distance.
   const parsed = parseRoutes(spec.routes, new Set(ids));
+  // Two separate routes between the same cities (not a double route) are drawn side by side.
+  const pairCount = {};
+  for (const p of parsed) { const k = [p.a, p.b].sort().join('-'); pairCount[k] = (pairCount[k] || 0) + 1; }
+  const pairSeen = {};
   const routes = [];
   for (const p of parsed) {
     const A = cities[idx.get(p.a)], B = cities[idx.get(p.b)];
     const len = p.len || Math.max(1, Math.min(8, Math.round(km(A, B) / spec.kmPerTrain)));
-    const base = { a: idx.get(p.a), b: idx.get(p.b), len, tunnel: p.tunnel, ferry: p.ferry, bend: p.bend, pair: -1 };
+    const base = { a: idx.get(p.a), b: idx.get(p.b), len, tunnel: p.tunnel, ferry: p.ferry, bend: p.bend, pair: -1, sub: p.sub };
+    const pk = [p.a, p.b].sort().join('-');
+    if (!p.double && pairCount[pk] === 2) {
+      pairSeen[pk] = (pairSeen[pk] || 0) + 1;
+      routes.push(Object.assign({}, base, { color: p.colors[0] !== undefined ? p.colors[0] : (p.ferry ? GRAY : null), side: pairSeen[pk] === 1 ? -1 : 1 }));
+      continue;
+    }
     if (p.ferry && p.ferry > len) throw new Error(`${p.a}-${p.b}: ferry needs more locomotives than its length`);
     if (p.double) {
       const i = routes.length;
@@ -360,7 +445,7 @@ function build(spec, ne) {
   const headings = (city) => routes.map((r, i) => {
     if (r.a !== city && r.b !== city) return null;
     const pts = r.a === city ? r.center : r.center.slice().reverse();
-    return { i, ang: Math.atan2(pts[3][1] - pts[0][1], pts[3][0] - pts[0][0]), w: r.pair >= 0 ? CAR_W + 2 * DOUBLE_OFF : CAR_W };
+    return { i, ang: Math.atan2(pts[3][1] - pts[0][1], pts[3][0] - pts[0][0]), w: r.side ? CAR_W + 2 * DOUBLE_OFF : CAR_W };
   }).filter(Boolean);
   const startAt = new Map();
   cities.forEach((c, ci) => {
@@ -368,7 +453,8 @@ function build(spec, ne) {
     for (const h of hs) {
       let need = CITY_R + 2.5;
       for (const o of hs) {
-        if (o.i === h.i || o.i === routes[h.i].pair) continue;
+        const same = routes[o.i].side && routes[h.i].side && [routes[o.i].a, routes[o.i].b].sort().join() === [routes[h.i].a, routes[h.i].b].sort().join();
+        if (o.i === h.i || o.i === routes[h.i].pair || same) continue;
         let d = Math.abs(h.ang - o.ang); if (d > Math.PI) d = 2 * Math.PI - d;
         if (d >= Math.PI / 2) continue;
         need = Math.max(need, ((h.w + o.w) / 2 + 1.5) / Math.sin(Math.max(d, 0.05)));
@@ -396,7 +482,7 @@ function build(spec, ne) {
   }
   // Report overlapping cars from different routes.
   for (let i = 0; i < routes.length; i++) for (let j = i + 1; j < routes.length; j++) {
-    if (routes[i].pair === j) continue;
+    if (routes[i].pair === j || (routes[i].side && routes[j].side && [routes[i].a, routes[i].b].sort().join() === [routes[j].a, routes[j].b].sort().join())) continue;
     const hit = routes[i].slots.some((s) => routes[j].slots.some((t) => slotsOverlap(s, t)));
     if (hit) warnings.push(`overlap ${ids[routes[i].a]}-${ids[routes[i].b]} x ${ids[routes[j].a]}-${ids[routes[j].b]}`);
   }
@@ -436,12 +522,22 @@ function build(spec, ne) {
       tickets.push({ a: best[0], b: best[1], pts: best[2], long: !!long });
     }
   };
+  const countryTickets = [];
   if (T.list) {
     // A fixed ticket deck: points as printed; flag any that differ from the shortest path, which catches route typos.
-    for (const [a, b, pts, long] of T.list) {
+    const ref = (x) => (x[0] === '@' ? -(countryIds.indexOf(x.slice(1)) + 1) : idx.get(x));
+    for (const tk of T.list) {
+      if (!Array.isArray(tk)) {
+        // Country ticket: from a city or a country, to whichever listed country scores best.
+        const from = ref(tk.from), opts = tk.opts.map(([c, pts]) => [-ref(c) - 1, pts]);
+        if (from == null || opts.some((o) => o[0] < 0)) throw new Error(`${spec.id}: bad country ticket ${JSON.stringify(tk)}`);
+        countryTickets.push({ from, opts });
+        continue;
+      }
+      const [a, b, pts, long] = tk;
       const ia = idx.get(a), ib = idx.get(b);
       if (ia == null || ib == null) throw new Error(`${spec.id}: ticket ${a}-${b} names an unknown city`);
-      if (D[ia][ib] !== pts) warnings.push(`ticket ${a}-${b}: ${pts} pts, shortest path ${D[ia][ib]}`);
+      if (Math.abs(D[ia][ib] - pts) > 1) warnings.push(`ticket ${a}-${b}: ${pts} pts, shortest path ${D[ia][ib]}`);
       tickets.push({ a: ia, b: ib, pts, long: !!long });
     }
   }
@@ -471,7 +567,7 @@ function build(spec, ne) {
     return [r1(best.x), r1(best.y)];
   });
 
-  const geo = geoLayers(ne, proj, spec.bbox, proj.h);
+  const geo = geoLayers(ne, proj, spec, proj.h);
   const colorTrains = Array(8).fill(0);
   routes.forEach((r) => { if (r.color >= 0) colorTrains[r.color] += r.len; });
 
@@ -480,21 +576,23 @@ function build(spec, ne) {
     stats: { cities: n, routes: routes.length, trains: routes.reduce((s, r) => s + r.len, 0), gray: routes.filter((r) => r.color === GRAY).length, colorTrains, tickets: tickets.length },
     data: {
       id: spec.id, name: spec.name, blurb: spec.blurb, rules: spec.rules || {}, w: W, h: proj.h,
-      land: geo.land, lakes: geo.lakes, borders: geo.borders,
-      cities: cities.map((c, i) => ({ id: c.id, name: c.name, x: r1(c.x), y: r1(c.y), lx: labels[i][0], ly: labels[i][1] })),
+      land: geo.land, lakes: geo.lakes, borders: geo.borders, tints: geo.tints,
+      countries: countryIds.map((id) => ({ id, name: spec.countries[id], nodes: cities.map((c, i) => (c.country === countryIds.indexOf(id) ? i : -1)).filter((i) => i >= 0) })),
+      cities: cities.map((c, i) => Object.assign({ id: c.id, name: c.name, x: r1(c.x), y: r1(c.y), lx: labels[i][0], ly: labels[i][1] }, c.country >= 0 ? { country: c.country } : {})),
       routes: routes.map((r) => ({
-        a: r.a, b: r.b, len: r.len, color: r.color, tunnel: r.tunnel || undefined, ferry: r.ferry || undefined, pair: r.pair,
+        a: r.a, b: r.b, len: r.len, color: r.color, tunnel: r.tunnel || undefined, ferry: r.ferry || undefined, sub: r.sub || undefined, pair: r.pair,
         slots: r.slots.map((s) => [r1(s[0]), r1(s[1]), Math.round((s[2] * 180) / Math.PI), r1(s[3])]),
         hit: [r.path[0], r.path[10], r.path[20], r.path[30], r.path[40]].map((p) => [r1(p[0]), r1(p[1])]),
       })),
-      tickets: tickets.map((t) => (t.long ? [t.a, t.b, t.pts, 1] : [t.a, t.b, t.pts])),
+      // City tickets: [a, b, points, long?]. Country tickets: { f: city index or -(country + 1), o: [[country, points]...] }.
+      tickets: tickets.map((t) => (t.long ? [t.a, t.b, t.pts, 1] : [t.a, t.b, t.pts])).concat(countryTickets.map((t) => ({ f: t.from, o: t.opts }))),
     },
   };
 }
 
 // ---------- main ----------
 const ne = ensureNe();
-const order = ['europe', 'usa', 'nordic', 'britain', 'india'];
+const order = ['europe', 'usa', 'nordic', 'india', 'switzerland'];
 const files = readdirSync(new URL('maps-src/', ROOT)).filter((f) => f.endsWith('.mjs')).map((f) => f.replace('.mjs', ''));
 const ids = order.filter((id) => files.includes(id)).concat(files.filter((f) => !order.includes(f)).sort());
 const all = {};

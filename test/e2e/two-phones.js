@@ -3,7 +3,7 @@
 const L = require('./lib');
 (async () => {
   const mode = process.argv[2] || 'online', relay = process.argv.includes('relay');
-  const map = process.argv.find((a) => ['europe', 'usa', 'nordic', 'britain', 'india'].includes(a)) || 'europe';
+  const map = process.argv.find((a) => ['europe', 'usa', 'nordic', 'india', 'switzerland'].includes(a)) || 'europe';
   const params = {};
   if (process.env.BROKER) params.broker = process.env.BROKER;
   if (relay) params.relay = '1';

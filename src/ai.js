@@ -39,25 +39,39 @@
     });
   }
 
-  /** Dijkstra from a to b over route costs; returns { cost, routes } or null. */
-  function cheapest(m, cost, a, b) {
+  /** Dijkstra from any city in `from` to the nearest city in `to` over route costs; returns { cost, routes } or null. */
+  function cheapest(m, cost, from, to) {
+    const src = [].concat(from), dst = new Set([].concat(to));
     const n = m.cities.length, dist = Array(n).fill(Infinity), via = Array(n).fill(-1), done = new Uint8Array(n);
     const adj = adjacency(m);
-    dist[a] = 0;
+    for (const a of src) dist[a] = 0;
+    let end = -1;
     for (;;) {
       let u = -1;
       for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
-      if (u < 0 || u === b) break;
+      if (u < 0) break;
+      if (dst.has(u)) { end = u; break; }
       done[u] = 1;
       for (const [v, r] of adj[u]) {
         const d = dist[u] + cost[r];
         if (d < dist[v]) { dist[v] = d; via[v] = r; }
       }
     }
-    if (dist[b] === Infinity) return null;
+    if (end < 0) return null;
     const routes = [];
-    for (let c = b; c !== a;) { const r = via[c]; routes.push(r); const rt = m.routes[r]; c = rt.a === c ? rt.b : rt.a; }
-    return { cost: dist[b], routes };
+    for (let c = end; via[c] >= 0 && dist[c] > 0;) { const r = via[c]; routes.push(r); const rt = m.routes[r]; c = rt.a === c ? rt.b : rt.a; }
+    return { cost: dist[end], routes };
+  }
+
+  /** Cheapest way to complete a ticket: a city ticket's two cities, or a country ticket's best-value country. */
+  function ticketPath(m, cost, t) {
+    if (!E.isCountryTicket(t)) return cheapest(m, cost, t[0], t[1]);
+    let best = null;
+    for (const [c, pts] of t.o) {
+      const res = cheapest(m, cost, E.nodesOf(m, t.f), E.nodesOf(m, -(c + 1)));
+      if (res && (!best || pts - res.cost > best.pts - best.cost)) best = Object.assign(res, { pts });
+    }
+    return best;
   }
   const adjCache = new Map();
   function adjacency(m) {
@@ -72,12 +86,11 @@
   function plan(G, p, tickets) {
     const m = E.mapOf(G);
     const cost = routeCosts(G, p, false);
-    const ids = (tickets || G.tickets[p]).filter((id) => id >= 0).slice().sort((x, y) => m.tickets[y][2] - m.tickets[x][2]);
+    const ids = (tickets || G.tickets[p]).filter((id) => id >= 0).slice().sort((x, y) => E.ticketPoints(m.tickets[y]) - E.ticketPoints(m.tickets[x]));
     const need = new Set(), hopeless = [];
     let trains = 0;
     for (const id of ids) {
-      const t = m.tickets[id];
-      const res = cheapest(m, cost, t[0], t[1]);
+      const res = ticketPath(m, cost, m.tickets[id]);
       if (!res) { hopeless.push(id); continue; }
       for (const r of res.routes) if (G.owner[r] < 0 && !need.has(r)) { need.add(r); trains += m.routes[r].len; cost[r] = 0; }
     }
@@ -99,7 +112,7 @@
     const m = E.mapOf(G), offer = G.offer[p], min = G.keepMin[p];
     const R = E.rulesOf(G);
     if (level === 'easy') {
-      const sorted = offer.slice().sort((x, y) => m.tickets[x][2] - m.tickets[y][2]);
+      const sorted = offer.slice().sort((x, y) => E.ticketPoints(m.tickets[x]) - E.ticketPoints(m.tickets[y]));
       return { k: 'keep', ids: sorted.slice(0, min) };
     }
     const owned = G.tickets[p].filter((x) => x >= 0);
@@ -115,8 +128,9 @@
       for (const id of pool) {
         const pl = plan(G, p, owned.concat(chosen, [id]));
         const dead = pl.hopeless.includes(id);
-        const ratio = dead ? Infinity : (pl.trains - cur) / m.tickets[id][2];
-        if (!best || ratio < best.ratio || (ratio === best.ratio && m.tickets[id][2] < m.tickets[best.id][2])) best = { id, ratio, trains: dead ? Infinity : pl.trains };
+        const pts = E.ticketPoints(m.tickets[id]);
+        const ratio = dead ? Infinity : (pl.trains - cur) / pts;
+        if (!best || ratio < best.ratio || (ratio === best.ratio && pts < E.ticketPoints(m.tickets[best.id]))) best = { id, ratio, trains: dead ? Infinity : pl.trains };
       }
       const mustTake = chosen.length < min;
       const fits = best.trains <= budget && best.ratio <= maxRatio;
@@ -129,13 +143,16 @@
   }
 
   // ---------- paying ----------
-  /** Best payment: fewest locomotives, then the colour the rest of the plan needs least. */
+  /** Main colour of a payment (the colour with most cards), or -1 for locomotives only. */
+  const mainColour = (cards) => { let c = -1; for (let k = 0; k < 8; k++) if (cards[k] && (c < 0 || cards[k] > cards[c])) c = k; return c; };
+  /** Best payment: fewest locomotives and substitute cards, then the colour the rest of the plan needs least. */
   function bestPay(G, p, opts, needs) {
     const hand = G.hands[p];
     let best = null, bs = Infinity;
     for (const o of opts) {
-      const spare = o.c >= 0 ? hand[o.c] - (needs ? needs.want[o.c] : 0) : 0;
-      const s = o.l * 10 - spare + (o.c < 0 ? 5 : 0);
+      const c = mainColour(o);
+      const spare = c >= 0 ? hand[c] - (needs ? needs.want[c] : 0) : 0;
+      const s = o[LOCO] * 10 + E.sum(o) * 3 - spare + (c < 0 ? 5 : 0);
       if (s < bs) { bs = s; best = o; }
     }
     return best;
@@ -149,10 +166,8 @@
     const step = G.step;
 
     if (step && step.tunnel) {
-      const T = step.tunnel, hand = G.hands[p];
-      const have = (T.c >= 0 ? hand[T.c] : 0) + hand[LOCO];
-      const ok = T.c >= 0 ? have >= T.extra : hand[LOCO] >= T.extra;
-      return ok ? { k: 'tunnel', pay: true } : { k: 'tunnel', pay: false };
+      const opts = E.tunnelOptions(G, p);
+      return opts.length ? { k: 'tunnel', pay: true, cards: opts[0] } : { k: 'tunnel', pay: false };
     }
 
     const pl = plan(G, p);
@@ -165,7 +180,7 @@
 
     // 1. Claim a planned route we can pay for: longest first (hardest to collect cards for).
     // A tunnel only with spare matching cards in hand, or the CPU can keep failing the same tunnel.
-    const spareFor = (r, o) => (o.c >= 0 ? G.hands[p][o.c] : 0) + G.hands[p][LOCO] - m.routes[r].len;
+    const spareFor = (r, o) => { const c = mainColour(o); return (c >= 0 ? G.hands[p][c] : 0) + G.hands[p][LOCO] - E.sum(o); };
     const claimable = pl.need.map((r) => ({ r, opts: E.paymentOptions(G, p, r) }))
       .filter((x) => x.opts.length && (!m.routes[x.r].tunnel || raceOn || x.opts.some((o) => spareFor(x.r, o) >= 1)));
     if (claimable.length && (level !== 'easy' || jitter(G, p, 1) < 0.8)) {
@@ -184,21 +199,21 @@
       }
       const pick = claimable[0];
       const pay = bestPay(G, p, pick.opts, colourNeeds(G, p, pl.need.filter((r) => r !== pick.r)));
-      return { k: 'claim', r: pick.r, c: pay.c, l: pay.l };
+      return { k: 'claim', r: pick.r, cards: pay };
     }
 
     // 2. A blocked ticket: build a station next to the route that gets us past the block.
     if (level !== 'easy' && R.stations && G.stations[p] > 0 && pl.hopeless.length) {
       const cost = routeCosts(G, p, true);
       for (const id of pl.hopeless) {
-        const t = m.tickets[id], res = cheapest(m, cost, t[0], t[1]);
+        const res = ticketPath(m, cost, m.tickets[id]);
         if (!res) continue;
         const borrowed = res.routes.filter((r) => G.owner[r] >= 0 && G.owner[r] !== p);
         if (borrowed.length !== 1) continue;
         const rt = m.routes[borrowed[0]];
         for (const city of [rt.a, rt.b]) {
           const opts = E.stationOptions(G, p, city);
-          if (opts.length) { const pay = bestPay(G, p, opts, needs); return { k: 'station', city, c: pay.c, l: pay.l }; }
+          if (opts.length) return { k: 'station', city, cards: bestPay(G, p, opts, needs) };
         }
       }
     }
@@ -221,7 +236,7 @@
     if (any) return any;
     if (G.tdeck.length) return { k: 'tickets' };
     if (R.stations && G.stations[p] > 0) {
-      for (let c = 0; c < m.cities.length; c++) { const o = E.stationOptions(G, p, c); if (o.length) return { k: 'station', city: c, c: o[0].c, l: o[0].l }; }
+      for (let c = 0; c < m.cities.length; c++) { const o = E.stationOptions(G, p, c); if (o.length) return { k: 'station', city: c, cards: o[0] }; }
     }
     return { k: 'pass' };
   }
@@ -236,10 +251,10 @@
       if (rt.len < minLen) return;
       const opts = E.paymentOptions(G, p, r);
       if (!opts.length) return;
-      if (rt.tunnel && !opts.some((o) => (o.c >= 0 ? G.hands[p][o.c] : 0) + G.hands[p][LOCO] > rt.len) && G.lastFrom < 0) return;
+      if (rt.tunnel && !opts.some((o) => { const c = mainColour(o); return (c >= 0 ? G.hands[p][c] : 0) + G.hands[p][LOCO] > E.sum(o); }) && G.lastFrom < 0) return;
       const pay = bestPay(G, p, opts, colourNeeds(G, p, planned.filter((x) => x !== r)));
-      const s = E.routePoints(rt.len) + (mine.has(rt.a) || mine.has(rt.b) ? 2 : 0) - pay.l * 2 + (planned.includes(r) ? 5 : 0);
-      if (s > bs) { bs = s; best = { k: 'claim', r, c: pay.c, l: pay.l }; }
+      const s = E.routePoints(rt.len) + (mine.has(rt.a) || mine.has(rt.b) ? 2 : 0) - pay[LOCO] * 2 - (E.sum(pay) - rt.len) * 2 + (planned.includes(r) ? 5 : 0);
+      if (s > bs) { bs = s; best = { k: 'claim', r, cards: pay }; }
     });
     return best;
   }
@@ -257,7 +272,13 @@
       if (v > bestNeed) { bestNeed = v; bestSlot = i; }
     });
     if (bestSlot >= 0) return { k: 'card', slot: bestSlot };
-    if (!second && level !== 'easy') {
+    const free = E.rulesOf(G).locoDrawFree;
+    if (free) {
+      // Where a face-up locomotive is just one card, it is always worth taking.
+      const loco = market.findIndex((c, i) => c === LOCO && can(i));
+      if (loco >= 0 && level !== 'easy') return { k: 'card', slot: loco };
+    }
+    if (!second && level !== 'easy' && !free) {
       const loco = market.findIndex((c, i) => c === LOCO && can(i));
       const totalDeficit = needs.deficit.reduce((s, x) => s + x, 0) + needs.gray;
       if (loco >= 0 && totalDeficit >= 6 && jitter(G, p, 9) < (level === 'hard' ? 0.7 : 0.5)) return { k: 'card', slot: loco };

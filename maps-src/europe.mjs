@@ -4,7 +4,7 @@ export default {
   id: 'europe',
   name: 'Europe',
   blurb: 'The classic board: tunnels, ferries and stations, from Edinburgh to Erzurum.',
-  rules: { trains: 45, stations: 3, players: [2, 5], doubleMin: 4, deal: { long: 1, short: 3, keep: 2 }, bonus: ['longest'] },
+  rules: { trains: 45, stations: 3, players: [2, 5], doubleMin: 4, deal: { long: 1, short: 3, keep: 2 }, bonus: ['longest'], tie: ['tickets', 'stations', 'longest'] },
   bbox: [-11.2, 34.6, 45.2, 61.8],
   kmPerTrain: 165,
   cities: {
@@ -78,7 +78,7 @@ export default {
     mad bar 2 yellow
     lis cad 2 blue
     bar mar 4 gray
-    mar zur 2 gray t
+    mar zur 2 purple t
     mar rom 4 gray t
     bru ams 1 black
     bru fra 2 blue

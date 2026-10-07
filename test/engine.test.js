@@ -33,9 +33,34 @@ test('every map is valid: connected, sane routes, slots match lengths, tickets r
     const u = E.components(m, m.routes.map((_, i) => i));
     const roots = new Set(m.cities.map((_, i) => E.ufFind(u, i)));
     assert.equal(roots.size, 1, `${id} connected`);
-    for (const t of m.tickets) { assert.notEqual(t[0], t[1]); assert.ok(t[2] > 0); }
+    for (const t of m.tickets) {
+      if (E.isCountryTicket(t)) { assert.ok(t.o.length >= 2 && t.o.every((o) => m.countries[o[0]] && o[1] > 0)); continue; }
+      assert.notEqual(t[0], t[1]); assert.ok(t[2] > 0);
+    }
     const R = E.rulesOf(id);
-    assert.ok(m.tickets.filter((t) => !t[3]).length >= R.players[1] * (R.deal.short + R.draw.n), `${id} enough tickets`);
+    assert.ok(m.tickets.filter((t) => !t[3]).length >= R.players[1] * R.deal.short + R.draw.n, `${id} enough tickets`);
+  }
+});
+
+test('official boards: city, route and ticket counts as published', () => {
+  const lanes = (id) => M.get(id).routes.length;
+  const conn = (id) => M.get(id).routes.filter((r, i) => r.pair < 0 || r.pair > i).length; // a double route counts once
+  const expect = { europe: [47, 101, 46], usa: [36, 100, 30], nordic: [39, 81, 46], india: [39, 108, 58], switzerland: [51, 88, 46] };
+  for (const [id, [cities, routes, tickets]] of Object.entries(expect)) {
+    const m = M.get(id);
+    assert.equal(m.cities.length, cities, `${id} cities`);
+    assert.equal(lanes(id), routes, `${id} lanes`);
+    assert.equal(m.tickets.length, tickets, `${id} tickets`);
+  }
+  assert.equal(conn('usa'), 78);
+  assert.equal(conn('nordic'), 70);
+  assert.equal(conn('india'), 80);
+  assert.equal(conn('switzerland'), 76);
+  // Every colour appears equally often on the USA and India boards.
+  for (const id of ['usa', 'india']) {
+    const per = Array(8).fill(0);
+    M.get(id).routes.forEach((r) => { if (r.color >= 0) per[r.color] += r.len; });
+    assert.ok(per.every((x) => x === per[0]), `${id} colours ${per}`);
   }
 });
 
@@ -104,7 +129,8 @@ test('claiming: colour, gray, locomotives, trains and points', () => {
   setHand(G, 0, { [rc]: 2, [other]: 3, [LOCO]: 1 });
   assert.equal(E.legal(G, 0, { k: 'claim', r: colored, c: other, l: 0 }), 'color');
   assert.equal(E.legal(G, 0, { k: 'claim', r: colored, c: rc, l: 0 }), 'cards');
-  assert.deepEqual(E.paymentOptions(G, 0, colored), [{ c: rc, l: 1 }]);
+  const want = Array(9).fill(0); want[rc] = 2; want[LOCO] = 1;
+  assert.deepEqual(E.paymentOptions(G, 0, colored), [want]);
   E.apply(G, 0, { k: 'claim', r: colored, c: rc, l: 1 });
   assert.equal(G.owner[colored], 0);
   assert.equal(G.trains[0], 45 - 3);
@@ -117,7 +143,7 @@ test('claiming: colour, gray, locomotives, trains and points', () => {
 });
 
 test('double routes: one owner per pair, and closed in small games', () => {
-  const [a, b] = routeIdx('usa', 'nyc', 'bos');
+  const [a, b] = routeIdx('usa', 'newyork', 'boston');
   const G = playing('usa', 3, 2);
   const m = M.get('usa');
   setHand(G, 0, { [LOCO]: 10 });
@@ -140,7 +166,7 @@ test('ferries need their locomotives', () => {
   setHand(G, 0, { 3: 2, [LOCO]: 1 });
   assert.equal(E.legal(G, 0, { k: 'claim', r, c: 3, l: 1 }), 'ferry');
   setHand(G, 0, { 3: 2, [LOCO]: 2 });
-  assert.deepEqual(E.paymentOptions(G, 0, r), [{ c: -1, l: 2 }]);
+  assert.deepEqual(E.paymentOptions(G, 0, r), [[0, 0, 0, 0, 0, 0, 0, 0, 2]]);
   assert.equal(E.legal(G, 0, { k: 'claim', r, c: 3, l: 1 }), 'ferry');
   assert.equal(E.legal(G, 0, { k: 'claim', r, c: -1, l: 2 }), null);
 });
@@ -202,12 +228,12 @@ test('stations: rising cost, one per city, and they borrow a route for tickets a
 test('longest path and mandala paths', () => {
   const m = M.get('india');
   const r = (a, b) => routeIdx('india', a, b)[0];
-  const loop = [r('mum', 'pun'), r('pun', 'aur'), r('aur', 'mum')];
+  const loop = [r('bombay', 'poona'), r('poona', 'manmad'), r('manmad', 'bombay')];
   assert.equal(E.longestPath(m, loop), m.routes[loop[0]].len + m.routes[loop[1]].len + m.routes[loop[2]].len);
-  assert.ok(E.twoPaths(m, loop, cityIdx('india', 'mum'), cityIdx('india', 'aur')));
-  assert.ok(!E.twoPaths(m, loop.slice(0, 2), cityIdx('india', 'mum'), cityIdx('india', 'aur')));
+  assert.ok(E.twoPaths(m, loop, cityIdx('india', 'bombay'), cityIdx('india', 'manmad')));
+  assert.ok(!E.twoPaths(m, loop.slice(0, 2), cityIdx('india', 'bombay'), cityIdx('india', 'manmad')));
   // A star counts only its two longest arms.
-  const star = [r('nag', 'hyd'), r('nag', 'aur'), r('nag', 'rai')];
+  const star = [r('wadi', 'indur'), r('wadi', 'poona'), r('wadi', 'mormugao')];
   const lens = star.map((x) => m.routes[x].len).sort((a, b) => b - a);
   assert.equal(E.longestPath(m, star), lens[0] + lens[1]);
 });
@@ -271,4 +297,91 @@ test('CPU players finish games on every map and never make an illegal move', () 
       }
     }
   }
+});
+
+const cardsOf = (o) => { const c = Array(9).fill(0); for (const [k, v] of Object.entries(o)) c[k] = v; return c; };
+
+test('Nordic: locomotives only on tunnels and ferries; 3 cards for a ferry locomotive; 4 cards per space on Murmansk-Lieksa', () => {
+  const m = M.get('nordic');
+  const G = playing('nordic', 2, 3);
+  const plain = m.routes.findIndex((r) => !r.tunnel && !r.ferry && r.color >= 0 && r.len === 2 && r.pair < 0);
+  const col = m.routes[plain].color;
+  setHand(G, 0, { [col]: 1, [LOCO]: 3 });
+  assert.equal(E.paymentOptions(G, 0, plain).length, 0, 'no locomotive on a plain route');
+  assert.equal(E.legal(G, 0, { k: 'claim', r: plain, cards: cardsOf({ [col]: 1, [LOCO]: 1 }) }), 'loco-here');
+  // Ferry Bergen-Stavanger (2, purple, 1 locomotive): no locomotive, so 1 purple + any 3 cards.
+  const [fer] = routeIdx('nordic', 'bergen', 'stavanger');
+  setHand(G, 0, { 0: 1, 2: 2, 5: 1 });
+  assert.equal(E.legal(G, 0, { k: 'claim', r: fer, cards: cardsOf({ 0: 1, 2: 2, 5: 1 }) }), null);
+  assert.notEqual(E.legal(G, 0, { k: 'claim', r: fer, cards: cardsOf({ 0: 1, 2: 2 }) }), null);
+  // Murmansk-Lieksa (9, gray): 7 green + 8 other cards.
+  const [ml] = routeIdx('nordic', 'murmansk', 'lieksa');
+  assert.equal(m.routes[ml].len, 9);
+  setHand(G, 0, { 7: 7, 1: 5, 2: 3 });
+  assert.equal(E.legal(G, 0, { k: 'claim', r: ml, cards: cardsOf({ 7: 7, 1: 5, 2: 3 }) }), null);
+  assert.ok(E.paymentOptions(G, 0, ml).some((o) => E.sum(o) === 15));
+  assert.equal(E.routePoints(9), 27);
+});
+
+test('Nordic and Switzerland: a face-up locomotive is one card; no locomotive limit', () => {
+  const G = playing('nordic', 2, 5);
+  G.market = [LOCO, LOCO, LOCO, 1, 2];
+  E.apply(G, 0, { k: 'card', slot: 0 });
+  assert.equal(G.turn, 0, 'turn goes on');
+  assert.equal(E.legal(G, 0, { k: 'card', slot: 1 }), null);
+  E.apply(G, 0, { k: 'card', slot: 1 });
+  assert.equal(G.turn, 1);
+});
+
+test('Nordic: tickets not kept leave the game', () => {
+  const G = E.newGame({ map: 'nordic', n: 2, seed: 9, first: 0 });
+  const before = G.tdeck.length;
+  E.apply(G, 0, { k: 'keep', ids: G.offer[0].slice(0, 2) });
+  assert.equal(G.tdeck.length, before);
+  assert.equal(E.rulesOf('nordic').deal.short, 5);
+});
+
+test('Switzerland: country tickets score the best country reached, or lose the smallest', () => {
+  const m = M.get('switzerland');
+  const G = playing('switzerland', 2, 4);
+  const id = m.tickets.findIndex((t) => E.isCountryTicket(t) && t.f >= 0 && m.cities[t.f].name === 'Bern');
+  const t = m.tickets[id];
+  G.tickets[0] = [id]; G.tickets[1] = [];
+  const own = (a, b) => { for (const r of routeIdx('switzerland', a, b)) { G.owner[r] = 0; break; } };
+  let s = E.score(G).rows[0];
+  assert.equal(s.minus, Math.min(...t.o.map((o) => o[1])));
+  // Bern - Fribourg - Lausanne - Genève - France (border)
+  own('bern', 'fribourg'); own('fribourg', 'lausanne'); own('lausanne', 'geneve'); own('geneve', 'fr_geneve');
+  s = E.score(G).rows[0];
+  const fr = m.countries.findIndex((c) => c.id === 'fr');
+  assert.equal(s.plus, t.o.find((o) => o[0] === fr)[1]);
+  assert.deepEqual(s.done, [id]);
+  // Locomotives only on tunnels.
+  const plain = m.routes.findIndex((r) => !r.tunnel && r.color >= 0 && G.owner[m.routes.indexOf(r)] < 0);
+  setHand(G, 0, { [LOCO]: 6 });
+  assert.equal(E.paymentOptions(G, 0, plain).length, 0);
+});
+
+test('India: Indian Express and Mandala, no Globetrotter; doubles only with 4', () => {
+  const R = E.rulesOf('india');
+  assert.deepEqual(R.bonus.sort(), ['longest', 'mandala']);
+  assert.deepEqual(R.players, [2, 4]);
+  assert.equal(R.doubleMin, 4);
+});
+
+test('house rule: up to 5 players on smaller boards', () => {
+  assert.throws(() => E.newGame({ map: 'nordic', n: 5 }), /bad-players/);
+  const G = E.newGame({ map: 'nordic', n: 5, house: true, seed: 2 });
+  assert.equal(G.n, 5);
+  assert.ok(G.house);
+});
+
+test('Europe tie-break: more tickets, then fewer stations used', () => {
+  const G = playing('europe', 2, 40);
+  G.owner = G.owner.map(() => -1);
+  G.tickets = [[], []];
+  G.stations = [3, 2];
+  const s = E.score(G);
+  // Both 0 points except stations: 12 vs 8, so player 0 wins outright.
+  assert.deepEqual(s.winners, [0]);
 });

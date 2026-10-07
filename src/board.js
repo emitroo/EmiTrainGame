@@ -31,12 +31,27 @@
     return s + `<text x="${x}" y="${y - r * 1.2}" class="c-n">N</text></g>`;
   }
 
+  // Pastel washes for countries, like the hand-tinted maps of the period (Natural Earth's 7-colour scheme).
+  const TINTS = ['#e9d2a0', '#dfd8a8', '#e6c9a6', '#d8cfa0', '#ead9b4', '#d9c49a', '#e3d5a9'];
+  // Little flags for border crossings into neighbouring countries.
+  const FLAGS = {
+    fr: [['#2b4fa3', '#f4f1e6', '#c8372d'], 'v'], it: [['#3d8b4a', '#f4f1e6', '#c8372d'], 'v'],
+    de: [['#1f1d1b', '#c8372d', '#e2b33a'], 'h'], at: [['#c8372d', '#f4f1e6', '#c8372d'], 'h'],
+  };
+  function flag(x, y, code) {
+    const [cols, dir] = FLAGS[code] || [['#bbb', '#eee', '#bbb'], 'v'];
+    let s = `<g class="flag" transform="translate(${x} ${y})"><path d="M-6 6V-12" class="pole"/>`;
+    cols.forEach((c, i) => { s += dir === 'v' ? `<rect x="${-6 + i * 4.4}" y="-12" width="4.4" height="9" fill="${c}"/>` : `<rect x="-6" y="${-12 + i * 3}" width="13.2" height="3" fill="${c}"/>`; });
+    return s + '<rect x="-6" y="-12" width="13.2" height="9" class="flag-edge"/><circle r="3.4" class="flag-foot"/></g>';
+  }
+
   /** Static SVG for a map. small = a thumbnail without labels. */
   function baseSvg(m, small) {
     let s = small ? '' : DEFS;
     s += `<rect x="-200" y="-200" width="${m.w + 400}" height="${m.h + 400}" class="sea"/>`;
     if (!small) s += `<rect x="-200" y="-200" width="${m.w + 400}" height="${m.h + 400}" fill="url(#sea-hatch)"/><path class="coast-glow" d="${m.land}"/>`;
     s += `<path class="land" d="${m.land}"/>`;
+    (m.tints || []).forEach((d, k) => { if (d) s += `<path class="tint" d="${d}" fill="${TINTS[k]}"/>`; });
     if (!small) s += `<path d="${m.land}" fill="url(#land-stipple)"/>`;
     s += `<path class="lake" d="${m.lakes}"/>`;
     if (!small) s += `<path class="border" d="${m.borders}"/><rect x="-200" y="-200" width="${m.w + 400}" height="${m.h + 400}" fill="url(#vignette)" pointer-events="none"/>${compass(m.w * 0.07, m.h * 0.11, Math.min(m.w, m.h) * 0.045)}`;
@@ -50,11 +65,15 @@
       });
     });
     s += '</g><g class="cities">';
-    m.cities.forEach((c) => { s += small ? `<circle class="city" cx="${c.x}" cy="${c.y}" r="6"/>` : `<circle class="city-out" cx="${c.x}" cy="${c.y}" r="8.2"/><circle class="city" cx="${c.x}" cy="${c.y}" r="5.6"/>`; });
+    const codes = (m.countries || []).map((c) => c.id);
+    m.cities.forEach((c) => {
+      if (c.country != null) { s += small ? `<circle class="city" cx="${c.x}" cy="${c.y}" r="4"/>` : flag(c.x, c.y, codes[c.country]); return; }
+      s += small ? `<circle class="city" cx="${c.x}" cy="${c.y}" r="6"/>` : `<circle class="city-out" cx="${c.x}" cy="${c.y}" r="8.2"/><circle class="city" cx="${c.x}" cy="${c.y}" r="5.6"/>`;
+    });
     s += '</g>';
     if (!small) {
       s += '<g class="labels">';
-      m.cities.forEach((c) => { s += `<text x="${c.lx}" y="${c.ly}">${esc(c.name)}</text>`; });
+      m.cities.forEach((c) => { s += `<text x="${c.lx}" y="${c.ly}"${c.country != null ? ' class="ctry"' : ''}>${esc(c.name)}</text>`; });
       s += '</g>';
     }
     return s;
@@ -107,7 +126,9 @@
         r.slots.forEach((sl) => {
           s += slotRect(sl, 'car' + fl, PLAYER_COLORS[o], ` stroke="${PLAYER_DARK[o]}"`);
           s += slotRect(sl, 'car-sheen', 'url(#car-sheen)');
-          s += `<g transform="translate(${sl[0]} ${sl[1]}) rotate(${sl[2]})" class="car-wheels" fill="${PLAYER_DARK[o]}"><circle cx="${-sl[3] / 2 + 3.2}" cy="3.6" r="1.5"/><circle cx="${sl[3] / 2 - 3.2}" cy="3.6" r="1.5"/></g>`;
+          // A little wagon: window band, roof line and wheels.
+          const hl = sl[3] / 2;
+          s += `<g transform="translate(${sl[0]} ${sl[1]}) rotate(${sl[2]})" class="car-detail" fill="${PLAYER_DARK[o]}"><rect x="${-hl + 2.6}" y="-2.4" width="${sl[3] - 5.2}" height="2.2" rx=".6" fill="#fff" opacity=".42"/><path d="M${-hl + 1.4} -3.3H${hl - 1.4}" stroke="${PLAYER_DARK[o]}" stroke-width=".7" opacity=".7"/><circle cx="${-hl + 3.2}" cy="3.6" r="1.5"/><circle cx="${hl - 3.2}" cy="3.6" r="1.5"/></g>`;
         });
       });
       if (st.selRoute != null && st.selRoute >= 0) {

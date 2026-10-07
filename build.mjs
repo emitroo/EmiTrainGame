@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const css = read('./src/style.css');
 const body = read('./src/body.html');
-const files = ['vendor/qrcode.min.js', 'vendor/jsQR.min.js', 'config.js', 'maps.js', 'engine.js', 'ai.js', 'board.js', 'i18n.js', 'net.js', 'app.js'];
+const files = ['vendor/qrcode.min.js', 'vendor/jsQR.min.js', 'config.js', 'maps.js', 'engine.js', 'ai.js', 'trains.js', 'board.js', 'i18n.js', 'net.js', 'app.js'];
 const scripts = files.map((f) => read('./src/' + f)).join('\n;\n');
 // Keep a literal "</script" out of inline code.
 const js = scripts.replace(/<\/script/gi, '<\\/script');
